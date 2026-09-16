@@ -1,0 +1,14 @@
+[Unit]
+Description=cpk: coupang cookie session keepalive (home GET + canary search)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ec2-user
+WorkingDirectory=__HOME__/cpk
+EnvironmentFile=-__HOME__/cpk/cpk.env
+Environment=PYTHONIOENCODING=utf-8
+Environment=CPK_HOME=__HOME__/cpk/state
+ExecStart=__HOME__/cpk/.venv/bin/python __HOME__/cpk/cpk_keepalive.py
+TimeoutStartSec=180

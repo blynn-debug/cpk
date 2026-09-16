@@ -1,0 +1,4 @@
+# cpk 런타임 의존성. 맥미니 venv: .venv/bin/pip install -r requirements.txt
+curl_cffi>=0.16
+beautifulsoup4>=4.12
+websocket-client>=1.7

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.cpk.chrome</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/Google Chrome.app/Contents/MacOS/Google Chrome</string>
+    <string>--user-data-dir=__HOME__/cpk/state/chrome-profile</string>
+    <string>--remote-debugging-port=9222</string>
+    <string>--remote-debugging-address=127.0.0.1</string>
+    <string>--no-first-run</string>
+    <string>--no-default-browser-check</string>
+    <string>--window-size=1280,900</string>
+    <string>--lang=ko-KR</string>
+    <string>about:blank</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>15</integer>
+  <key>StandardOutPath</key><string>__HOME__/cpk/state/chrome.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/cpk/state/chrome.err.log</string>
+</dict>
+</plist>

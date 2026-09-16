@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Legacy: scheduled search health checks retired on 2026-09-16. Do not install. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.cpk.keepalive</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>cd "$HOME/cpk" &amp;&amp; set -a &amp;&amp; . ./cpk.env &amp;&amp; set +a &amp;&amp; exec .venv/bin/python cpk_keepalive.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONIOENCODING</key><string>utf-8</string>
+    <key>CPK_HOME</key><string>__HOME__/cpk/state</string>
+    <key>PATH</key><string>/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin</string>
+  </dict>
+  <key>StartInterval</key><integer>1800</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>__HOME__/cpk/state/launchd.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/cpk/state/launchd.err.log</string>
+</dict>
+</plist>

@@ -1,0 +1,6 @@
+state/
+cpk.env
+*cookie*.txt
+__pycache__/
+.venv/
+data/
