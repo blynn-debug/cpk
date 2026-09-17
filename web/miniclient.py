@@ -79,9 +79,17 @@ def build_ssh_command(keyword: str, key_path: str) -> list[str]:
         "-o", "ServerAliveInterval=10",
         "-o", "ServerAliveCountMax=6",
     ]
+    # ProxyJump 은 점프 호스트에 -i 키를 넘기지 않는다(컨테이너엔 기본 키가 없어 점프 인증 실패).
+    # → ProxyCommand 로 점프에도 같은 전용 키를 명시한다.
+    proxy_cmd = " ".join([
+        "ssh", "-i", key_path, "-W", "%h:%p",
+        "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=15",
+        f"{aws_user}@{host}",
+    ])
     return [
         "ssh", "-i", key_path,
-        "-o", "ProxyJump=" + f"{aws_user}@{host}",
+        "-o", "ProxyCommand=" + proxy_cmd,
         *common,
         "-p", port,
         f"{mini_user}@127.0.0.1",

@@ -42,7 +42,13 @@ class BuildSshCommand(unittest.TestCase):
         cmd = miniclient.build_ssh_command("계란보관함", "/tmp/k.pem")
         self.assertEqual(cmd[0], "ssh")
         self.assertIn("-i", cmd); self.assertIn("/tmp/k.pem", cmd)
-        self.assertIn("ProxyJump=ec2-user@1.2.3.4", cmd)
+        # 점프에도 전용 키를 넘기는 ProxyCommand(ProxyJump 은 -i 를 점프에 안 넘김)
+        pc = [c for c in cmd if c.startswith("ProxyCommand=")]
+        self.assertEqual(len(pc), 1, "ProxyCommand 옵션이 하나 있어야 함")
+        self.assertIn("ec2-user@1.2.3.4", pc[0])
+        self.assertIn("/tmp/k.pem", pc[0])   # 점프도 같은 키
+        self.assertIn("-W", pc[0])
+        self.assertNotIn("ProxyJump=", " ".join(cmd))  # ProxyJump 은 쓰지 않음
         self.assertIn("BatchMode=yes", cmd)
         self.assertIn("mini_worker@127.0.0.1", cmd)
         self.assertIn("2222", cmd)
