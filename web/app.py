@@ -33,6 +33,24 @@ def healthz():
     return jsonify({"ok": True})
 
 
+@app.get("/api/diag")
+def diag():
+    """배포/네트워크 진단: 새 코드 버전 표식 + aws103:22 TCP 도달성 + 키 존재 여부."""
+    import socket
+    host = os.environ.get("AWS103_HOST", "").strip()
+    res = {"version": "proxycommand-1",
+           "aws103_host_set": bool(host),
+           "has_ssh_key": bool(os.environ.get("SSH_KEY", "").strip()),
+           "has_ssh_key_file": bool(os.environ.get("SSH_KEY_FILE", "").strip())}
+    try:
+        s = socket.create_connection((host, 22), timeout=8)
+        s.close()
+        res["tcp_aws103_22"] = "ok"
+    except Exception as e:
+        res["tcp_aws103_22"] = f"fail: {type(e).__name__}: {e}"
+    return jsonify(res)
+
+
 @app.post("/api/search")
 def api_search():
     data = request.get_json(silent=True) or {}
