@@ -1,0 +1,126 @@
+"""Railway → 맥미니 크롤러 SSH 중계.
+
+전용 SSH 키(환경변수 SSH_KEY)로 aws103(ProxyJump)을 거쳐 맥미니의 forced-command 를 호출하고,
+검색 1건의 JSON 을 받아 dict 로 돌려준다. 크롤링 자체는 맥미니에서만 돈다.
+
+환경변수:
+  SSH_KEY           전용 개인키(PEM 텍스트). 없으면 SSH_KEY_FILE 경로 사용.
+  AWS103_HOST       aws103 공인 IP/호스트
+  AWS103_USER       aws103 사용자(기본 ec2-user)
+  MINI_USER         맥미니 사용자(기본 mini_worker)
+  MINI_TUNNEL_PORT  aws103 에서 맥미니로 가는 역터널 포트(기본 2222)
+  SSH_TIMEOUT       ssh 전체 타임아웃 초(기본 60)
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import tempfile
+
+KEYWORD_RE = re.compile(r"^[\w가-힣ㄱ-ㅎㅏ-ㅣ0-9 ().,+&/-]{1,60}$")
+
+_HUMAN = {
+    "ok": None,
+    "no_results": "결과가 없습니다.",
+    "challenge": "지금 차단 구간이라 실패했어요. 잠시 후 다시 시도해 주세요.",
+    "http_error": "쿠팡이 일시적으로 막았어요. 잠시 후 다시 시도해 주세요.",
+    "load_error": "페이지를 불러오지 못했어요. 다시 시도해 주세요.",
+    "paused": "요청 제어로 잠시 대기 중이에요(차단 백오프). 나중에 다시 시도해 주세요.",
+    "budget": "오늘 조회 한도에 도달했어요. 내일 다시 시도해 주세요.",
+    "busy": "다른 검색이 진행 중이에요. 잠시 후 다시 시도해 주세요.",
+    "error": "크롤러 오류가 발생했어요.",
+    "timeout": "시간이 초과됐어요(최대 대기). 다시 시도해 주세요.",
+    "transport": "맥미니에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.",
+    "badinput": "검색어에 허용되지 않는 문자가 있어요.",
+}
+
+
+def human_message(outcome: str) -> str | None:
+    return _HUMAN.get(outcome, "알 수 없는 오류가 발생했어요.")
+
+
+def valid_keyword(q: str) -> bool:
+    s = (q or "").strip()
+    return bool(s) and bool(KEYWORD_RE.match(s))
+
+
+def _key_path() -> str:
+    """SSH_KEY(내용) 또는 SSH_KEY_FILE(경로)에서 개인키 파일 경로를 확보한다."""
+    path = os.environ.get("SSH_KEY_FILE", "").strip()
+    if path and os.path.exists(path):
+        return path
+    key = os.environ.get("SSH_KEY", "")
+    if not key.strip():
+        raise RuntimeError("SSH_KEY(또는 SSH_KEY_FILE) 미설정")
+    if not key.endswith("\n"):
+        key += "\n"
+    fd, p = tempfile.mkstemp(prefix="cpk_key_", suffix=".pem")
+    with os.fdopen(fd, "w") as f:
+        f.write(key)
+    os.chmod(p, 0o600)
+    return p
+
+
+def build_ssh_command(keyword: str, key_path: str) -> list[str]:
+    """맥미니 forced-command 를 호출하는 ssh argv 를 만든다. keyword 는 원격 명령(SSH_ORIGINAL_COMMAND)."""
+    host = os.environ.get("AWS103_HOST", "").strip()
+    if not host:
+        raise RuntimeError("AWS103_HOST 미설정")
+    aws_user = os.environ.get("AWS103_USER", "ec2-user").strip()
+    mini_user = os.environ.get("MINI_USER", "mini_worker").strip()
+    port = os.environ.get("MINI_TUNNEL_PORT", "2222").strip()
+    common = [
+        "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "ConnectTimeout=15",
+        "-o", "ServerAliveInterval=10",
+        "-o", "ServerAliveCountMax=6",
+    ]
+    return [
+        "ssh", "-i", key_path,
+        "-o", "ProxyJump=" + f"{aws_user}@{host}",
+        *common,
+        "-p", port,
+        f"{mini_user}@127.0.0.1",
+        keyword,  # forced-command 가 SSH_ORIGINAL_COMMAND 로 받는다
+    ]
+
+
+def parse_output(stdout: str) -> dict:
+    """맥미니가 낸 JSON 한 줄을 파싱한다. 마지막 JSON 라인을 채택(잡음 대비)."""
+    for line in reversed([ln for ln in stdout.splitlines() if ln.strip()]):
+        try:
+            return json.loads(line)
+        except Exception:
+            continue
+    return {"outcome": "error", "error": "맥미니 응답을 파싱하지 못함", "items": []}
+
+
+def search(keyword: str) -> dict:
+    """키워드 1건을 맥미니에서 검색해 결과 dict 를 돌려준다. 실패도 outcome 으로 표현."""
+    keyword = (keyword or "").strip()
+    if not valid_keyword(keyword):
+        return {"query": keyword, "outcome": "badinput", "items": [],
+                "message": human_message("badinput")}
+    try:
+        key_path = _key_path()
+    except Exception as e:
+        return {"query": keyword, "outcome": "error", "items": [], "error": str(e),
+                "message": human_message("error")}
+    cmd = build_ssh_command(keyword, key_path)
+    timeout = float(os.environ.get("SSH_TIMEOUT", "110"))
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"query": keyword, "outcome": "timeout", "items": [],
+                "message": human_message("timeout")}
+    if p.returncode != 0 and not p.stdout.strip():
+        return {"query": keyword, "outcome": "transport", "items": [],
+                "error": (p.stderr or "").strip()[-300:], "message": human_message("transport")}
+    res = parse_output(p.stdout)
+    res.setdefault("query", keyword)
+    res["message"] = human_message(res.get("outcome", "error"))
+    return res

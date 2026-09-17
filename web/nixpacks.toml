@@ -1,0 +1,6 @@
+# Railway(Nixpacks) 빌드 설정. 맥미니 SSH 호출을 위해 openssh 클라이언트를 포함한다.
+[phases.setup]
+aptPkgs = ["openssh-client"]
+
+[start]
+cmd = "gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2"

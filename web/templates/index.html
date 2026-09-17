@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cpk 쿠팡 검색</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --line:#e5e7eb; --muted:#6b7280; --accent:#2563eb; --rocket:#1e88e5; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Malgun Gothic",sans-serif;
+         background:var(--bg); color:#111; }
+  .wrap { max-width:900px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:20px; margin:8px 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  .searchbar { display:flex; gap:8px; flex-wrap:wrap; }
+  input[type=text],input[type=password] { flex:1; min-width:160px; padding:12px 14px; font-size:16px;
+         border:1px solid var(--line); border-radius:10px; background:var(--card); }
+  button { padding:12px 20px; font-size:16px; border:0; border-radius:10px; background:var(--accent);
+           color:#fff; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  #status { margin:16px 0; font-size:14px; color:var(--muted); }
+  .summary { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+  .pill { background:var(--card); border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:13px; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 16px; }
+  .chip { background:#eef2ff; color:#3730a3; border-radius:999px; padding:5px 10px; font-size:12px; }
+  .chip.ac { background:#ecfdf5; color:#065f46; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); font-size:14px; vertical-align:top; }
+  th { background:#f9fafb; color:var(--muted); font-weight:600; font-size:12px; }
+  td.price { white-space:nowrap; font-weight:600; }
+  .badge { font-size:11px; padding:2px 7px; border-radius:6px; background:#eef; color:#334; white-space:nowrap; }
+  .badge.rocket { background:#e3f2fd; color:var(--rocket); }
+  .badge.seller { background:#e8f5e9; color:#2e7d32; }
+  .ad { font-size:10px; color:#b45309; border:1px solid #fcd34d; border-radius:4px; padding:1px 4px; margin-left:6px; }
+  a.name { color:#111; text-decoration:none; }
+  a.name:hover { text-decoration:underline; }
+  h2 { font-size:14px; margin:20px 0 6px; color:#374151; }
+  .err { color:#b91c1c; }
+  .section { margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>cpk 쿠팡 검색</h1>
+  <div class="sub">키워드 1개를 입력하고 검색을 누르면 쿠팡 결과를 보여줍니다. (버튼 1회 = 1건, 최대 90초)</div>
+
+  <div class="searchbar">
+    {% if password_required %}
+    <input id="pw" type="password" placeholder="접근 비밀번호" autocomplete="off" style="max-width:160px">
+    {% endif %}
+    <input id="q" type="text" placeholder="예: 계란보관함" autocomplete="off">
+    <button id="go">검색</button>
+  </div>
+
+  <div id="status"></div>
+  <div id="results"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const pwEl = $("pw");
+
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function won(n){ return (n==null)?"-":Number(n).toLocaleString("ko-KR")+"원"; }
+function badgeClass(b){ if(!b)return""; if(b.includes("판매자"))return"seller"; if(b.includes("로켓"))return"rocket"; return""; }
+
+async function run(){
+  const q = $("q").value.trim();
+  if(!q){ $("q").focus(); return; }
+  $("go").disabled = true;
+  $("status").innerHTML = "검색 중… 최대 90초 걸릴 수 있어요.";
+  $("results").innerHTML = "";
+  const started = Date.now();
+  const tick = setInterval(()=>{ $("status").innerHTML = "검색 중… " + Math.round((Date.now()-started)/1000) + "초"; }, 1000);
+  try {
+    const body = { q };
+    if (pwEl) body.password = pwEl.value;
+    const res = await fetch("/api/search", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+    const data = await res.json();
+    clearInterval(tick);
+    render(data);
+  } catch(e){
+    clearInterval(tick);
+    $("status").innerHTML = '<span class="err">연결 오류가 발생했어요. 다시 시도해 주세요.</span>';
+  } finally {
+    $("go").disabled = false;
+  }
+}
+
+function render(d){
+  const items = d.items || [];
+  if (d.outcome !== "ok" || items.length === 0){
+    const msg = d.message || (d.outcome==="no_results" ? "결과가 없습니다." : "결과를 가져오지 못했어요.");
+    $("status").innerHTML = '<span class="err">'+esc(msg)+'</span>';
+    if (d.outcome==="ok" && items.length===0) $("status").innerHTML = esc("결과가 없습니다.");
+    return;
+  }
+  const bc = d.badge_counts || {};
+  const badges = Object.keys(bc).map(k=>`<span class="pill">${esc(k)} ${bc[k]}</span>`).join("");
+  const total = (d.total_count!=null? d.total_count : d.count);
+  $("status").innerHTML =
+    `<span class="pill">검색어 <b>${esc(d.query)}</b></span> ` +
+    `<span class="pill">노출 ${esc(d.count)}개 / 총 ${esc(total)}</span> ` +
+    (d.elapsed_ms? `<span class="pill">${(d.elapsed_ms/1000).toFixed(1)}초</span> `:"") + badges;
+
+  let html = '<table><thead><tr><th>#</th><th>상품명</th><th>가격</th><th>배송</th><th>리뷰</th><th>구분</th></tr></thead><tbody>';
+  items.forEach((it,i)=>{
+    const name = it.url ? `<a class="name" href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.name)}</a>` : esc(it.name);
+    const ad = it.ad ? '<span class="ad">광고</span>' : '';
+    const fee = (it.fee===0?"무료":(it.fee==null?"-":won(it.fee)));
+    html += `<tr><td>${i+1}</td><td>${name}${ad}</td><td class="price">${won(it.price)}</td>`+
+            `<td>${esc(fee)}</td><td>${esc((it.reviews||0).toLocaleString("ko-KR"))}</td>`+
+            `<td><span class="badge ${badgeClass(it.badge)}">${esc(it.badge||"-")}</span></td></tr>`;
+  });
+  html += '</tbody></table>';
+
+  const rel = (d.related_keywords||[]);
+  const ac = (d.autocomplete||[]);
+  if (rel.length) html += `<h2>연관검색어</h2><div class="chips">${rel.map(k=>`<span class="chip">${esc(k)}</span>`).join("")}</div>`;
+  if (ac.length) html += `<h2>자동완성</h2><div class="chips">${ac.map(k=>`<span class="chip ac">${esc(k)}</span>`).join("")}</div>`;
+  $("results").innerHTML = html;
+}
+
+$("go").addEventListener("click", run);
+$("q").addEventListener("keydown", e=>{ if(e.key==="Enter") run(); });
+</script>
+</body>
+</html>
