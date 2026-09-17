@@ -120,7 +120,7 @@ def search(keyword: str) -> dict:
         return {"query": keyword, "outcome": "error", "items": [], "error": str(e),
                 "message": human_message("error")}
     cmd = build_ssh_command(keyword, key_path)
-    timeout = float(os.environ.get("SSH_TIMEOUT", "110"))
+    timeout = float(os.environ.get("SSH_TIMEOUT", "170"))
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:

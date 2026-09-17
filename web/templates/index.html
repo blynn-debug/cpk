@@ -42,7 +42,7 @@
 <body>
 <div class="wrap">
   <h1>cpk 쿠팡 검색</h1>
-  <div class="sub">키워드 1개를 입력하고 검색을 누르면 쿠팡 결과를 보여줍니다. (버튼 1회 = 1건, 최대 90초)</div>
+  <div class="sub">키워드 1개를 입력하고 검색을 누르면 쿠팡 결과를 보여줍니다. (버튼 1회 = 1건, 최대 3분)</div>
 
   <div class="searchbar">
     {% if password_required %}
@@ -68,7 +68,7 @@ async function run(){
   const q = $("q").value.trim();
   if(!q){ $("q").focus(); return; }
   $("go").disabled = true;
-  $("status").innerHTML = "검색 중… 최대 90초 걸릴 수 있어요.";
+  $("status").innerHTML = "검색 중… 최대 3분 걸릴 수 있어요.";
   $("results").innerHTML = "";
   const started = Date.now();
   const tick = setInterval(()=>{ $("status").innerHTML = "검색 중… " + Math.round((Date.now()-started)/1000) + "초"; }, 1000);

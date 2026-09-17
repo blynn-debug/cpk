@@ -14,4 +14,4 @@ COPY . .
 
 EXPOSE 8000
 # PORT 는 Railway 가 주입. gunicorn 타임아웃은 크롤(최대 ~90초)보다 길게.
-CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-8000} --timeout 120 --workers 2"]
+CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-8000} --timeout 190 --workers 2"]
