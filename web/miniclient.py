@@ -69,6 +69,7 @@ def build_ssh_command(keyword: str, key_path: str) -> list[str]:
     if not host:
         raise RuntimeError("AWS103_HOST 미설정")
     aws_user = os.environ.get("AWS103_USER", "ec2-user").strip()
+    aws_port = os.environ.get("AWS103_PORT", "22").strip()  # 점프 호스트 SSH 포트(대체 포트 대비)
     mini_user = os.environ.get("MINI_USER", "mini_worker").strip()
     port = os.environ.get("MINI_TUNNEL_PORT", "2222").strip()
     common = [
@@ -82,7 +83,7 @@ def build_ssh_command(keyword: str, key_path: str) -> list[str]:
     # ProxyJump 은 점프 호스트에 -i 키를 넘기지 않는다(컨테이너엔 기본 키가 없어 점프 인증 실패).
     # → ProxyCommand 로 점프에도 같은 전용 키를 명시한다.
     proxy_cmd = " ".join([
-        "ssh", "-i", key_path, "-W", "%h:%p",
+        "ssh", "-i", key_path, "-W", "%h:%p", "-p", aws_port,
         "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
         "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=15",
         f"{aws_user}@{host}",

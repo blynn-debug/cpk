@@ -38,16 +38,22 @@ def diag():
     """배포/네트워크 진단: 새 코드 버전 표식 + aws103:22 TCP 도달성 + 키 존재 여부."""
     import socket
     host = os.environ.get("AWS103_HOST", "").strip()
-    res = {"version": "proxycommand-1",
+    port = int(os.environ.get("AWS103_PORT", "22"))
+    res = {"version": "diag-2",
            "aws103_host_set": bool(host),
-           "has_ssh_key": bool(os.environ.get("SSH_KEY", "").strip()),
-           "has_ssh_key_file": bool(os.environ.get("SSH_KEY_FILE", "").strip())}
-    try:
-        s = socket.create_connection((host, 22), timeout=8)
-        s.close()
-        res["tcp_aws103_22"] = "ok"
-    except Exception as e:
-        res["tcp_aws103_22"] = f"fail: {type(e).__name__}: {e}"
+           "aws103_port": port,
+           "has_ssh_key": bool(os.environ.get("SSH_KEY", "").strip())}
+
+    def probe(h, p):
+        try:
+            socket.create_connection((h, p), timeout=8).close()
+            return "ok"
+        except Exception as e:
+            return f"fail: {type(e).__name__}"
+
+    res["tcp_aws103"] = probe(host, port)          # aws103 지정 포트
+    res["tcp_github_22"] = probe("github.com", 22)  # 아웃바운드 22 자체가 되나(대조)
+    res["tcp_github_443"] = probe("github.com", 443)  # 아웃바운드 일반(대조)
     return jsonify(res)
 
 
