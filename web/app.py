@@ -39,7 +39,7 @@ def diag():
     import socket
     host = os.environ.get("AWS103_HOST", "").strip()
     port = int(os.environ.get("AWS103_PORT", "22"))
-    res = {"version": "diag-2",
+    res = {"version": "diag-3",
            "aws103_host_set": bool(host),
            "aws103_port": port,
            "has_ssh_key": bool(os.environ.get("SSH_KEY", "").strip())}
