@@ -28,7 +28,11 @@ jobs:
           pip install -r web/requirements.txt
 
       - name: Core offline tests (unit + regression)
-        run: python -m unittest tests.test_unit tests.test_regression -v
+        run: >
+          python -m unittest
+          tests.test_unit tests.test_regression
+          tests.test_domeggook tests.test_market_db tests.test_market_snapshot
+          tests.test_market_score tests.test_market_expand tests.test_market_collect -v
 
       - name: Web offline tests
         working-directory: web
