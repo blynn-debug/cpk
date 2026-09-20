@@ -33,3 +33,21 @@ jobs:
       - name: Web offline tests
         working-directory: web
         run: python -m unittest tests.test_web -v
+
+  lint:
+    runs-on: ubuntu-latest
+    # 지금은 '자문(advisory)' 단계 — 결과만 보고하고 CI를 막지 않는다(continue-on-error).
+    # 코드를 한 번 정리한 뒤 continue-on-error 를 지워 '차단(blocking)'으로 승격한다.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install ruff
+      - name: Ruff lint (advisory)
+        continue-on-error: true
+        run: ruff check . --output-format=github
+      - name: Ruff format check (advisory)
+        continue-on-error: true
+        run: ruff format --check --diff .
