@@ -38,3 +38,12 @@ class Report(unittest.TestCase):
         mdb.insert_snapshot(self.conn, c, SNAP, day="2026-09-21")  # 점수 없음
         r = mr.report(self.conn)
         self.assertEqual(r["markets"][-1]["keyword"], "무점수")
+
+    def test_null_rocket_counts_no_crash(self):
+        # rocket_cnt/seller_rocket_cnt 가 NULL 이어도 units>0 이면 리포트가 죽지 않는다.
+        d = mdb.upsert_keyword(self.conn, "널로켓", "seed", status="tracked")
+        snap = {**SNAP, "rocket_cnt": None, "seller_rocket_cnt": None}
+        mdb.insert_snapshot(self.conn, d, snap, day="2026-09-21")
+        r = mr.report(self.conn)  # 예외 없어야 함
+        row = next(m for m in r["markets"] if m["keyword"] == "널로켓")
+        self.assertEqual(row["trend"][0]["rocket_ratio"], 0.0)

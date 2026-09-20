@@ -5,7 +5,7 @@ import cpk_market_db as mdb
 
 def _trend_point(s: dict) -> dict:
     units = s.get("units_shown") or 0
-    ratio = ((s.get("rocket_cnt", 0) + s.get("seller_rocket_cnt", 0)) / units) if units else 0.0
+    ratio = (((s.get("rocket_cnt") or 0) + (s.get("seller_rocket_cnt") or 0)) / units) if units else 0.0
     return {"day": s["day"], "review_sum": s.get("review_sum"),
             "price_med": s.get("price_med"), "rocket_ratio": round(ratio, 4)}
 

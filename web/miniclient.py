@@ -9,7 +9,7 @@
   AWS103_USER       aws103 사용자(기본 ec2-user)
   MINI_USER         맥미니 사용자(기본 mini_worker)
   MINI_TUNNEL_PORT  aws103 에서 맥미니로 가는 역터널 포트(기본 2222)
-  SSH_TIMEOUT       ssh 전체 타임아웃 초(기본 60)
+  SSH_TIMEOUT       ssh 전체 타임아웃 초(기본 170)
 """
 from __future__ import annotations
 
