@@ -22,6 +22,6 @@ scp -o BatchMode=yes deploy/cpk_ssh_search.sh deploy/install_mac.sh deploy/disab
 scp -o BatchMode=yes tests/*.py "$TARGET:~/cpk/tests/"
 
 # 원격 마무리: 실행권한 + 의존성 갱신(있으면)
-ssh -o BatchMode=yes "$TARGET" 'cd ~/cpk && chmod +x deploy/*.sh && \ { [ -x .venv/bin/pip ] && .venv/bin/pip install -q -r requirements.txt || true; } && \ echo "배포 완료: $(python3 -c "import time;print(time.strftime(\"%Y-%m-%d %H:%M:%S\"))")"'
+ssh -o BatchMode=yes "$TARGET" 'cd ~/cpk && chmod +x deploy/*.sh 2>/dev/null; [ -x .venv/bin/pip ] && .venv/bin/pip install -q -r requirements.txt >/dev/null 2>&1; echo deploy-done'
 
 echo "완료. (cpk.env·state·data 는 건드리지 않음)"
