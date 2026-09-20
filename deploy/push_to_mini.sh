@@ -7,12 +7,9 @@
 set -eu
 
 # 대상 선택
-if ssh -o BatchMode=yes -o ConnectTimeout=4 mini true 2>/dev/null; then
-  TARGET=mini
-elif ssh -o BatchMode=yes -o ConnectTimeout=15 mini-remote true 2>/dev/null; then
-  TARGET=mini-remote
-else
-  echo "맥미니에 접속할 수 없음(mini/mini-remote 모두 실패)"; exit 1
+if ssh -o BatchMode=yes -o ConnectTimeout=4 mini true 2>/dev/null; then TARGET=mini
+elif ssh -o BatchMode=yes -o ConnectTimeout=15 mini-remote true 2>/dev/null; then TARGET=mini-remote
+else echo "맥미니에 접속할 수 없음(mini/mini-remote 모두 실패)"; exit 1
 fi
 echo "대상: $TARGET"
 
@@ -26,8 +23,6 @@ scp -o BatchMode=yes deploy/cpk_ssh_search.sh deploy/install_mac.sh deploy/disab
 scp -o BatchMode=yes tests/*.py "$TARGET:~/cpk/tests/"
 
 # 원격 마무리: 실행권한 + 의존성 갱신(있으면)
-ssh -o BatchMode=yes "$TARGET" 'cd ~/cpk && chmod +x deploy/*.sh && \
-  { [ -x .venv/bin/pip ] && .venv/bin/pip install -q -r requirements.txt || true; } && \
-  echo "배포 완료: $(python3 -c "import time;print(time.strftime(\"%Y-%m-%d %H:%M:%S\"))")"'
+ssh -o BatchMode=yes "$TARGET" 'cd ~/cpk && chmod +x deploy/*.sh && \ { [ -x .venv/bin/pip ] && .venv/bin/pip install -q -r requirements.txt || true; } && \ echo "배포 완료: $(python3 -c "import time;print(time.strftime(\"%Y-%m-%d %H:%M:%S\"))")"'
 
 echo "완료. (cpk.env·state·data 는 건드리지 않음)"
