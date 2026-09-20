@@ -23,3 +23,24 @@ def snapshot_from_result(result: dict) -> dict:
         "price_max": max(prices) if prices else None,
         "top_json": json.dumps(top, ensure_ascii=False),
     }
+
+
+def expand_seeds(seeds, related_fn, autocomplete_fn, cap: int = 50) -> list[dict]:
+    out, seen = [], set()
+
+    def add(kw, source, parent):
+        kw = (kw or "").strip()
+        if kw and kw not in seen and len(out) < cap:
+            seen.add(kw)
+            out.append({"keyword": kw, "source": source, "parent": parent})
+
+    for seed in seeds:
+        add(seed, "seed", None)
+    for seed in seeds:
+        for fn, src in ((related_fn, "related"), (autocomplete_fn, "auto")):
+            try:
+                for kw in fn(seed) or []:
+                    add(kw, src, seed)
+            except Exception:
+                continue  # 확장기 실패는 건너뛴다(seed는 이미 포함)
+    return out[:cap]
