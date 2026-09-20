@@ -26,3 +26,21 @@ def run_collection(conn, keywords, search_fn, sourcing_fn, today: str) -> dict:
             pass  # 소싱 실패는 수집을 막지 않는다(다음 회차 재시도)
         collected += 1
     return {"collected": collected, "failed": failed, "stopped": None}
+
+def main() -> int:
+    import cpk_session as cs, cpk_browser as cb, cpk_domeggook as dg, time
+    conn = mdb.connect(str(cs.HOME / "market.db"))
+    kws = mdb.tracked_keywords(conn)
+    if not kws:
+        cs.log("market: tracked 키워드 없음"); return 0
+    today = time.strftime("%Y-%m-%d")
+    r = run_collection(conn, kws,
+                       search_fn=lambda kw: cb.search(kw, kind="market"),
+                       sourcing_fn=lambda kw: dg.check_existence(kw),
+                       today=today)
+    cs.log(f"market 수집: {r}")
+    return 0
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
