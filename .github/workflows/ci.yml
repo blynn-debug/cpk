@@ -1,0 +1,35 @@
+name: cpk CI
+
+# push·PR 마다 오프라인 테스트 스위트를 자동 실행한다(네트워크·쿠팡 접근 없음).
+# 온라인(test_functional·test_integration)은 맥미니에서만 수동으로 돌린다 — 여기서 실행하지 않는다.
+# 자동이지만 관측·개입 가능: Actions 탭에서 결과 확인, 재실행, 필요시 비활성화할 수 있다.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:   # 탭에서 수동 실행 버튼
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r web/requirements.txt
+
+      - name: Core offline tests (unit + regression)
+        run: python -m unittest tests.test_unit tests.test_regression -v
+
+      - name: Web offline tests
+        working-directory: web
+        run: python -m unittest tests.test_web -v
