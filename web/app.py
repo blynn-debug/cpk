@@ -57,6 +57,16 @@ def diag():
     return jsonify(res)
 
 
+@app.get("/markets")
+def markets_page():
+    return render_template("markets.html")
+
+
+@app.get("/api/markets")
+def api_markets():
+    return jsonify(miniclient.market_report())
+
+
 @app.post("/api/search")
 def api_search():
     data = request.get_json(silent=True) or {}

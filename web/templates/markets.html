@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cpk market radar</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --line:#e5e7eb; --muted:#6b7280; --text:#111; --accent:#2563eb; --good:#065f46; --goodbg:#ecfdf5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111418; --card:#1a1e24; --line:#2a2f37; --muted:#9aa4b2; --text:#e5e7eb; --accent:#60a5fa; --good:#6ee7b7; --goodbg:#0f2a22; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Malgun Gothic",sans-serif;
+         background:var(--bg); color:var(--text); }
+  .wrap { max-width:1100px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:20px; margin:8px 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  #status { margin:16px 0; font-size:14px; color:var(--muted); }
+  .err { color:#b91c1c; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line);
+          border-radius:10px; overflow:hidden; }
+  th,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); font-size:14px; vertical-align:middle; }
+  th { background:rgba(127,127,127,.08); color:var(--muted); font-weight:600; font-size:12px; white-space:nowrap; }
+  td.num, th.num { text-align:right; white-space:nowrap; }
+  tbody tr:last-child td { border-bottom:none; }
+  .badge { font-size:11px; padding:2px 7px; border-radius:6px; background:rgba(127,127,127,.15); color:var(--muted); white-space:nowrap; }
+  .badge.yes { background:var(--goodbg); color:var(--good); }
+  .spark { vertical-align:middle; }
+  .tablewrap { overflow-x:auto; }
+  .muted { color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="markets">cpk market radar — markets</h1>
+  <div class="sub">market.db 에 쌓인 기회점수·경쟁·수요·꾸준함·도매꾹 현황을 읽기 전용으로 보여줍니다.</div>
+
+  <div id="status">불러오는 중…</div>
+  <div id="results"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function num(n, digits){
+  if (n === null || n === undefined) return "—";
+  if (typeof n !== "number") return esc(n);
+  return digits == null ? n.toLocaleString("ko-KR") : n.toFixed(digits);
+}
+
+function sparkline(points){
+  const vals = (points||[]).map(p => (p && typeof p.review_sum === "number") ? p.review_sum : null).filter(v => v !== null);
+  if (vals.length < 2) return '<span class="muted">—</span>';
+  const w = 80, h = 22, pad = 2;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const span = (max - min) || 1;
+  const step = (w - pad * 2) / (vals.length - 1);
+  const xy = vals.map((v, i) => {
+    const x = pad + i * step;
+    const y = h - pad - ((v - min) / span) * (h - pad * 2);
+    return x.toFixed(1) + "," + y.toFixed(1);
+  });
+  return '<svg class="spark" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" role="img" aria-label="추이">' +
+    '<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="'+esc(xy.join(" "))+'"/></svg>';
+}
+
+function domeBadge(m){
+  if (m.dome_exists) {
+    const cnt = (m.dome_count === null || m.dome_count === undefined) ? "" : (" " + esc(num(m.dome_count)));
+    return '<span class="badge yes">있음' + cnt + '</span>';
+  }
+  return '<span class="badge">없음</span>';
+}
+
+function render(data){
+  const markets = data.markets || [];
+
+  if (data.error) {
+    $("status").innerHTML = '<span class="err">'+esc(data.message || "데이터를 가져오지 못했어요.")+'</span>';
+    $("results").innerHTML = "";
+    return;
+  }
+  if (markets.length === 0) {
+    $("status").innerHTML = esc("아직 수집된 데이터가 없습니다.");
+    $("results").innerHTML = "";
+    return;
+  }
+
+  $("status").innerHTML = '<span class="muted">'+esc(markets.length)+'개 키워드'+
+    (data.generated ? ' · 생성 ' + esc(data.generated) : '')+'</span>';
+
+  let html = '<div class="tablewrap"><table><thead><tr>' +
+    '<th>키워드</th><th class="num">기회점수</th><th class="num">경쟁</th><th class="num">수요</th>' +
+    '<th class="num">꾸준함</th><th>도매꾹</th><th class="num">최신 리뷰합</th><th class="num">최신 중앙가</th><th>추이</th>' +
+    '</tr></thead><tbody>';
+
+  markets.forEach(m => {
+    const latest = m.latest || {};
+    html += '<tr>' +
+      '<td>'+esc(m.keyword)+'</td>' +
+      '<td class="num">'+num(m.opportunity, 3)+'</td>' +
+      '<td class="num">'+num(m.rarity, 3)+'</td>' +
+      '<td class="num">'+num(m.demand, 3)+'</td>' +
+      '<td class="num">'+num(m.steadiness, 3)+'</td>' +
+      '<td>'+domeBadge(m)+'</td>' +
+      '<td class="num">'+num(latest.review_sum)+'</td>' +
+      '<td class="num">'+num(latest.price_med)+'</td>' +
+      '<td>'+sparkline(m.trend)+'</td>' +
+      '</tr>';
+  });
+  html += '</tbody></table></div>';
+  $("results").innerHTML = html;
+}
+
+async function load(){
+  try {
+    const res = await fetch("/api/markets");
+    const data = await res.json();
+    render(data);
+  } catch (e) {
+    $("status").innerHTML = '<span class="err">연결 오류가 발생했어요. 다시 시도해 주세요.</span>';
+  }
+}
+
+load();
+</script>
+</body>
+</html>

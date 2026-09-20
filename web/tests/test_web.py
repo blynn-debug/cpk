@@ -157,5 +157,29 @@ class ApiPasswordGate(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
 
 
+class MarketReport(unittest.TestCase):
+    def setUp(self):
+        import importlib, os
+        os.environ.pop("APP_PASSWORD", None)
+        import app as appmod; importlib.reload(appmod)
+        self.app = appmod; self.client = appmod.app.test_client()
+
+    def test_api_markets_calls_miniclient(self):
+        from unittest import mock
+        fake = {"generated": "t", "markets": [{"keyword": "계란보관함", "opportunity": 0.6,
+                 "dome_exists": 1, "dome_count": 42, "latest": {"review_sum": 1200},
+                 "rarity": .7, "demand": .6, "steadiness": .5, "trend": []}]}
+        with mock.patch.object(self.app.miniclient, "market_report", return_value=fake) as m:
+            r = self.client.get("/api/markets")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["markets"][0]["keyword"], "계란보관함")
+        m.assert_called_once()
+
+    def test_markets_page_renders(self):
+        r = self.client.get("/markets")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"markets", r.data.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

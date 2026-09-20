@@ -12,4 +12,8 @@ set +a
 # (큐/헬스체크 등 다른 경로는 cpk.env 의 보수적 값을 그대로 쓴다 — 여기 export 는 이 프로세스에만 유효)
 export CPK_SEARCH_MIN_GAP="${CPK_WEB_SEARCH_MIN_GAP:-5}"
 export CPK_WARM_SECS="${CPK_WEB_WARM_SECS:-8}"
+# 리포트 sentinel 이면 시장 리포트로, 아니면 기존 검색 1건으로 분기한다.
+if [ "${SSH_ORIGINAL_COMMAND:-}" = "__market_report__" ]; then
+  exec .venv/bin/python cpk_market_report.py
+fi
 exec .venv/bin/python cpk_search_json.py
