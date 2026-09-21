@@ -180,6 +180,11 @@ class MarketReport(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"markets", r.data.lower())
 
+    def test_guide_page_renders(self):
+        r = self.client.get("/guide")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("지표 설명".encode("utf-8"), r.data)
+
 
 if __name__ == "__main__":
     unittest.main()

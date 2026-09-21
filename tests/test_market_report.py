@@ -39,6 +39,21 @@ class Report(unittest.TestCase):
         r = mr.report(self.conn)
         self.assertEqual(r["markets"][-1]["keyword"], "무점수")
 
+    def test_related_and_autocomplete_full_lists(self):
+        e = mdb.upsert_keyword(self.conn, "연관키", "seed", status="tracked")
+        snap = {**SNAP, "related_json": '["계란트레이","계란정리함","달걀보관"]',
+                "auto_json": '["계란보관함 30구","계란보관함 대형"]'}
+        mdb.insert_snapshot(self.conn, e, snap, day="2026-09-21")
+        r = mr.report(self.conn)
+        row = next(m for m in r["markets"] if m["keyword"] == "연관키")
+        self.assertEqual(row["related"], ["계란트레이", "계란정리함", "달걀보관"])
+        self.assertEqual(row["autocomplete"], ["계란보관함 30구", "계란보관함 대형"])
+
+    def test_related_missing_is_empty_list(self):
+        r = mr.report(self.conn)  # setUp 스냅샷엔 related_json 없음
+        self.assertEqual(r["markets"][0]["related"], [])
+        self.assertEqual(r["markets"][0]["autocomplete"], [])
+
     def test_null_rocket_counts_no_crash(self):
         # rocket_cnt/seller_rocket_cnt 가 NULL 이어도 units>0 이면 리포트가 죽지 않는다.
         d = mdb.upsert_keyword(self.conn, "널로켓", "seed", status="tracked")

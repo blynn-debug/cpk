@@ -28,12 +28,29 @@
   .spark { vertical-align:middle; }
   .tablewrap { overflow-x:auto; }
   .muted { color:var(--muted); }
+  .topnav { display:flex; gap:14px; align-items:center; margin-bottom:12px; font-size:13px; }
+  .topnav a { color:var(--accent); text-decoration:none; }
+  .topnav a:hover { text-decoration:underline; }
+  .kwcell { min-width:180px; }
+  .kw { font-weight:600; }
+  .chips { margin-top:6px; }
+  .chips details { margin-top:4px; }
+  .chips summary { cursor:pointer; color:var(--muted); font-size:12px; list-style:none; user-select:none; }
+  .chips summary::-webkit-details-marker { display:none; }
+  .chips summary::before { content:"▸ "; }
+  .chips details[open] summary::before { content:"▾ "; }
+  .chiprow { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+  .chip { font-size:11px; padding:2px 7px; border-radius:999px; background:rgba(127,127,127,.12);
+          color:var(--text); border:1px solid var(--line); white-space:nowrap; }
+  .chip.auto { background:rgba(37,99,235,.08); }
+  .grouplabel { font-size:11px; color:var(--muted); margin-top:6px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1 id="markets">cpk market radar — markets</h1>
   <div class="sub">market.db 에 쌓인 기회점수·경쟁·수요·꾸준함·도매꾹 현황을 읽기 전용으로 보여줍니다.</div>
+  <div class="topnav"><a href="/guide">📖 지표 설명 (판단 가이드)</a></div>
 
   <div id="status">불러오는 중…</div>
   <div id="results"></div>
@@ -63,6 +80,22 @@ function sparkline(points){
   });
   return '<svg class="spark" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" role="img" aria-label="추이">' +
     '<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="'+esc(xy.join(" "))+'"/></svg>';
+}
+
+function chips(items, cls){
+  return (items||[]).map(t => '<span class="chip'+(cls?(' '+cls):'')+'">'+esc(t)+'</span>').join("");
+}
+
+// 연관검색어/자동완성: 6개 이하면 바로, 많으면 펼치기/접기(details)로 전량 출력.
+function chipGroup(label, items, cls){
+  items = (items||[]).filter(t => t != null && String(t).trim() !== "");
+  if (items.length === 0) return '<div class="grouplabel">'+esc(label)+' <span class="muted">없음</span></div>';
+  if (items.length <= 6) {
+    return '<div class="grouplabel">'+esc(label)+' '+esc(items.length)+'개</div>' +
+           '<div class="chiprow">'+chips(items, cls)+'</div>';
+  }
+  return '<details><summary>'+esc(label)+' '+esc(items.length)+'개 펼치기</summary>' +
+         '<div class="chiprow">'+chips(items, cls)+'</div></details>';
 }
 
 function domeBadge(m){
@@ -97,8 +130,13 @@ function render(data){
 
   markets.forEach(m => {
     const latest = m.latest || {};
+    const kwcell = '<div class="kw">'+esc(m.keyword)+'</div>' +
+      '<div class="chips">' +
+        chipGroup("연관검색어", m.related, "") +
+        chipGroup("자동완성", m.autocomplete, "auto") +
+      '</div>';
     html += '<tr>' +
-      '<td>'+esc(m.keyword)+'</td>' +
+      '<td class="kwcell">'+kwcell+'</td>' +
       '<td class="num">'+num(m.opportunity, 3)+'</td>' +
       '<td class="num">'+num(m.rarity, 3)+'</td>' +
       '<td class="num">'+num(m.demand, 3)+'</td>' +

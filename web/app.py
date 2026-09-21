@@ -62,6 +62,11 @@ def markets_page():
     return render_template("markets.html")
 
 
+@app.get("/guide")
+def guide_page():
+    return render_template("guide.html")
+
+
 @app.get("/api/markets")
 def api_markets():
     return jsonify(miniclient.market_report())

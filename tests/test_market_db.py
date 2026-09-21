@@ -49,3 +49,26 @@ class MarketDb(unittest.TestCase):
         rows = mdb.tracked_keywords(self.conn)
         self.assertEqual(rows[0]["dome_count"], 42)
         self.assertEqual(rows[0]["opportunity"], 0.6)
+
+    def test_related_auto_json_roundtrip(self):
+        k = mdb.upsert_keyword(self.conn, "a", "seed", status="tracked")
+        snap = {**SNAP, "related_json": '["연관1","연관2"]', "auto_json": '["자동1"]'}
+        mdb.insert_snapshot(self.conn, k, snap, day="2026-09-21")
+        s = mdb.snapshots_for(self.conn, k)[0]
+        self.assertEqual(s["related_json"], '["연관1","연관2"]')
+        self.assertEqual(s["auto_json"], '["자동1"]')
+
+    def test_migrate_adds_missing_columns(self):
+        import sqlite3
+        # related_json/auto_json 이 없던 구버전 snapshots 테이블을 흉내낸다.
+        raw = sqlite3.connect(":memory:")
+        raw.row_factory = sqlite3.Row
+        raw.execute("""CREATE TABLE snapshots(
+            id INTEGER PRIMARY KEY, keyword_id INTEGER, day TEXT,
+            result_count INTEGER, top_json TEXT, ts TEXT, UNIQUE(keyword_id, day))""")
+        raw.commit()
+        mdb._migrate_snapshots(raw)
+        cols = {r["name"] for r in raw.execute("PRAGMA table_info(snapshots)")}
+        self.assertIn("related_json", cols)
+        self.assertIn("auto_json", cols)
+        self.assertIn("review_sum", cols)  # 다른 누락 컬럼도 채워짐

@@ -3,8 +3,24 @@
 from __future__ import annotations
 import sqlite3, time
 
+# TEXT 로 저장되는 컬럼(JSON 문자열). 나머지 SNAP_COLS 는 INTEGER.
+TEXT_COLS = {"top_json", "related_json", "auto_json"}
 SNAP_COLS = ["result_count", "units_shown", "rocket_cnt", "seller_rocket_cnt", "general_cnt",
-             "ad_cnt", "review_sum", "review_max", "price_min", "price_med", "price_max", "top_json"]
+             "ad_cnt", "review_sum", "review_max", "price_min", "price_med", "price_max",
+             "top_json", "related_json", "auto_json"]
+
+def _snap_col_defs() -> str:
+    return ", ".join(c + (" TEXT" if c in TEXT_COLS else " INTEGER") for c in SNAP_COLS)
+
+def _migrate_snapshots(conn) -> None:
+    """기존 snapshots 테이블에 없는 SNAP_COLS 컬럼을 추가한다(예: related_json/auto_json)."""
+    existing = {r["name"] for r in conn.execute("PRAGMA table_info(snapshots)")}
+    if not existing:
+        return  # 테이블이 아직 없으면 CREATE 가 처리
+    for c in SNAP_COLS:
+        if c not in existing:
+            conn.execute(f"ALTER TABLE snapshots ADD COLUMN {c} {'TEXT' if c in TEXT_COLS else 'INTEGER'}")
+    conn.commit()
 
 def connect(path) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
@@ -14,7 +30,7 @@ def connect(path) -> sqlite3.Connection:
         status TEXT DEFAULT 'candidate', parent TEXT, added_at TEXT)""")
     conn.execute(f"""CREATE TABLE IF NOT EXISTS snapshots(
         id INTEGER PRIMARY KEY, keyword_id INTEGER, day TEXT,
-        {", ".join(c + " INTEGER" for c in SNAP_COLS if c != "top_json")}, top_json TEXT,
+        {_snap_col_defs()},
         ts TEXT, UNIQUE(keyword_id, day))""")
     conn.execute("""CREATE TABLE IF NOT EXISTS sourcing(
         keyword_id INTEGER PRIMARY KEY, market TEXT, dome_exists INTEGER, dome_count INTEGER,
@@ -22,6 +38,7 @@ def connect(path) -> sqlite3.Connection:
     conn.execute("""CREATE TABLE IF NOT EXISTS scores(
         keyword_id INTEGER PRIMARY KEY, day TEXT,
         rarity REAL, demand REAL, steadiness REAL, opportunity REAL)""")
+    _migrate_snapshots(conn)
     conn.commit()
     return conn
 

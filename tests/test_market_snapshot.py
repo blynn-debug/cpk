@@ -34,3 +34,14 @@ class SnapshotFromResult(unittest.TestCase):
         s = m.snapshot_from_result({"count": 0, "total_count": 0, "badge_counts": {}, "ads": 0, "items": []})
         self.assertEqual(s["review_sum"], 0)
         self.assertIsNone(s["price_min"])
+
+    def test_related_and_autocomplete_preserved(self):
+        r = {**RESULT, "related_keywords": ["연관1", "연관2"], "autocomplete": ["자동1", "자동2", "자동3"]}
+        s = m.snapshot_from_result(r)
+        self.assertEqual(json.loads(s["related_json"]), ["연관1", "연관2"])
+        self.assertEqual(json.loads(s["auto_json"]), ["자동1", "자동2", "자동3"])
+
+    def test_related_missing_defaults_empty(self):
+        s = m.snapshot_from_result({"count": 0, "total_count": 0, "badge_counts": {}, "ads": 0, "items": []})
+        self.assertEqual(json.loads(s["related_json"]), [])
+        self.assertEqual(json.loads(s["auto_json"]), [])

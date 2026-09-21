@@ -9,6 +9,17 @@ def _trend_point(s: dict) -> dict:
     return {"day": s["day"], "review_sum": s.get("review_sum"),
             "price_med": s.get("price_med"), "rocket_ratio": round(ratio, 4)}
 
+def _load_list(s: dict, key: str) -> list:
+    """스냅샷의 JSON 문자열 컬럼(related_json/auto_json)을 리스트로 되돌린다."""
+    raw = s.get(key)
+    if not raw:
+        return []
+    try:
+        v = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    return v if isinstance(v, list) else []
+
 def report(conn) -> dict:
     markets = []
     for row in mdb.tracked_keywords(conn):
@@ -24,6 +35,9 @@ def report(conn) -> dict:
                        "price_med": latest.get("price_med"), "units_shown": latest.get("units_shown"),
                        "result_count": latest.get("result_count")},
             "trend": [_trend_point(s) for s in snaps],
+            # 연관검색어·자동완성 전량(최신 스냅샷 기준). 대시보드가 펼치기/접기로 표시.
+            "related": _load_list(latest, "related_json"),
+            "autocomplete": _load_list(latest, "auto_json"),
         })
     markets.sort(key=lambda m: (m["opportunity"] is None, -(m["opportunity"] or 0)))
     return {"generated": time.strftime("%Y-%m-%dT%H:%M:%S"), "markets": markets}
