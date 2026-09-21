@@ -29,6 +29,8 @@ def build_url(keyword, key, market="dome", premium=True, domestic=True, sz=5) ->
 def parse_response(body: str) -> dict:
     d = json.loads(body)
     root = d.get("domeggook", {})
+    if not isinstance(root, dict) or "numberOfItems" not in root.get("header", {}):
+        raise ValueError("invalid sourcing response")
     count = int(root.get("header", {}).get("numberOfItems", 0) or 0)
     items = root.get("list", {}).get("item", []) or []
     if isinstance(items, dict):
@@ -38,10 +40,10 @@ def parse_response(body: str) -> dict:
                for it in items]
     return {"count": count, "samples": samples}
 
-def check_existence(keyword, market="dome", premium=True, domestic=True, opener=None) -> dict:
+def check_existence(keyword, market="dome", premium=True, domestic=True, opener=None, *, timeout=20) -> dict:
     opener = opener or urllib.request.urlopen
     url = build_url(keyword, api_key(), market, premium, domestic, sz=5)
-    with opener(url, timeout=20) as r:
+    with opener(url, timeout=timeout) as r:
         body = r.read().decode("utf-8")
     parsed = parse_response(body)
     return {"keyword": keyword, "market": market, "exists": parsed["count"] > 0,

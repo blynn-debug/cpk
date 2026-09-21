@@ -40,6 +40,9 @@ def report(conn) -> dict:
             # 연관검색어·자동완성 전량(최신 스냅샷 기준). 대시보드가 펼치기/접기로 표시.
             "related": _load_list(latest, "related_json"),
             "autocomplete": _load_list(latest, "auto_json"),
+            "autocomplete_ok": latest.get("autocomplete_ok"),
+            "related_ok": latest.get("related_ok"),
+            "collected_at": latest.get("ts"),
             # 최신 스냅샷의 상위 상품(하단 '검색 결과' 패널용): [{name,price,reviews,badge}]
             "top": _load_list(latest, "top_json"),
         })

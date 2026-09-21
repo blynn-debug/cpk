@@ -33,11 +33,12 @@ jobs:
           tests.test_unit tests.test_regression
           tests.test_domeggook tests.test_market_db tests.test_market_snapshot
           tests.test_market_score tests.test_market_expand tests.test_market_collect
-          tests.test_market_report tests.test_market_parallel tests.test_market_seeds -v
+          tests.test_market_report tests.test_market_parallel tests.test_market_seeds
+          tests.test_latency tests.test_benchmark tests.test_worker_socket -v
 
       - name: Web offline tests
         working-directory: web
-        run: python -m unittest tests.test_web -v
+        run: python -m unittest tests.test_web tests.test_jobs -v
 
   lint:
     runs-on: ubuntu-latest

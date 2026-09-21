@@ -25,6 +25,8 @@ def snapshot_from_result(result: dict) -> dict:
         # 연관검색어·자동완성은 전량 보존한다(대시보드에서 펼치기/접기로 표시).
         "related_json": json.dumps(result.get("related_keywords") or [], ensure_ascii=False),
         "auto_json": json.dumps(result.get("autocomplete") or [], ensure_ascii=False),
+        "autocomplete_ok": result.get("autocomplete_ok"),
+        "related_ok": result.get("related_ok"),
     }
 
 

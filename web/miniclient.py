@@ -13,11 +13,15 @@
 """
 from __future__ import annotations
 
+import base64
 import json
+import logging
 import os
 import re
 import subprocess
 import tempfile
+import time
+import uuid
 
 KEYWORD_RE = re.compile(r"^[\w가-힣ㄱ-ㅎㅏ-ㅣ0-9 ().,+&/-]{1,60}$")
 
@@ -132,6 +136,63 @@ def market_report() -> dict:
 
 
 COLLECT_PREFIX = "__collect__ "
+
+
+def worker_request(payload: dict) -> dict:
+    """Start/read an on-demand job; SSH only waits for a short local socket response."""
+    started = time.monotonic()
+    outcome = "transport"
+    temporary_key = None
+    try:
+        key_path = _key_path()
+        if key_path != os.environ.get("SSH_KEY_FILE", "").strip():
+            temporary_key = key_path
+        encoded = base64.urlsafe_b64encode(json.dumps(payload, ensure_ascii=False).encode()).decode()
+        command = build_ssh_command("__worker__ " + encoded, key_path)
+        process = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", timeout=20)
+        if process.returncode and not process.stdout.strip():
+            return {"error": "transport", "message": human_message("transport")}
+        result = parse_output(process.stdout)
+        if result.get("outcome") == "error" and "request_id" not in result:
+            return {"error": "worker_unavailable", "message": "검색 작업 서버에 연결하지 못했어요."}
+        result["transport_ms"] = round((time.monotonic() - started) * 1000, 1)
+        outcome = result.get("error") or result.get("state", "ok")
+        return result
+    except subprocess.TimeoutExpired:
+        outcome = "timeout"
+        return {"error": "timeout", "message": human_message("timeout")}
+    except Exception:
+        return {"error": "transport", "message": human_message("transport")}
+    finally:
+        logging.getLogger("cpk.timing").warning(json.dumps({
+            "request_id": payload.get("request_id"), "stage": "ssh", "op": payload.get("op"),
+            "duration_ms": round((time.monotonic() - started) * 1000, 1), "outcome": outcome,
+        }))
+        if temporary_key:
+            try:
+                os.unlink(temporary_key)
+            except OSError:
+                pass
+
+
+def start_job(keyword: str, request_id: str | None = None) -> dict:
+    """Submit a validated keyword with an idempotency key."""
+    if not valid_keyword(keyword):
+        return {"error": "badinput"}
+    try:
+        request_id = str(uuid.UUID(request_id)) if request_id else str(uuid.uuid4())
+    except (ValueError, TypeError, AttributeError):
+        return {"error": "badinput"}
+    return worker_request({"op": "start", "query": keyword.strip(), "request_id": request_id})
+
+
+def get_job(request_id: str) -> dict:
+    """Read a job without starting another collection."""
+    try:
+        request_id = str(uuid.UUID(request_id))
+    except (ValueError, TypeError, AttributeError):
+        return {"error": "badinput"}
+    return worker_request({"op": "get", "request_id": request_id})
 
 
 def collect(keyword: str) -> dict:

@@ -16,6 +16,20 @@ curl -s -m 40 https://cpk-production.up.railway.app/api/diag  # 배포버전·aw
 ssh aws103 'ss -tln | grep 2222'                           # 역터널 포트 떠 있나
 ```
 
+## 온디맨드 상주 워커
+
+- 웹의 `/api/jobs`가 짧은 SSH 호출로 작업을 시작하고 조회한다. 실제 검색은 맥미니
+  `com.cpk.worker`가 처리한다. 현재 프록시와 검색용 시크릿 컨텍스트를 유지·재사용한다.
+- 설치/재시작: `sh deploy/install_worker.sh`. Chrome 본체나 예약 작업은 재시작하지 않는다.
+- 설정: `CPK_WORKER_ROUTE=proxy`(기본), `CPK_CONTEXT_TTL=480`, `CPK_REQUEST_TIMEOUT=60`.
+  `CPK_WEB_SEARCH_MIN_GAP=5`, `CPK_WEB_WARM_SECS=8`은 기존 웹 설정과 같다.
+- 로그: `state/worker.err.log`, `state/performance.jsonl`. Railway의 `cpk.timing` 로그와
+  `request_id`로 연결한다. 상태 조회는 추가 검색을 시작하지 않는다.
+- 일반 Chrome 로그인·쿠키와 분리된 시크릿 컨텍스트다. 같은 검색용 시크릿 세션은 TTL 안에서
+  재사용하므로 검색마다 쿠키를 초기화하는 방식은 아니다. 오류/TTL/연결 종료 때 컨텍스트를 정리한다.
+- 재시작은 진행 중 검색을 중단할 수 있다. 작업 상태/소켓 health를 확인하고 진행한다.
+- 상세 실측과 복구 절차: [검색 지연 개선 기록](docs/research/2026-09-22-latency-implementation.md).
+
 ## 증상별 대처
 
 ### 1. 웹에서 "맥미니에 연결하지 못했어요"(transport)
@@ -26,9 +40,11 @@ ssh aws103 'ss -tln | grep 2222'                           # 역터널 포트 �
 3. **맥미니 다운/절전**: 집에서 직접 확인. 상시 Chrome(launchd com.cpk.chrome) 살아있나.
 
 ### 2. 검색이 "시간 초과"(timeout)
-- 크롤이 재시도·느린 IP로 길어짐. 정상 ~50초, 재시도 붙으면 ~90초+.
-- 웹 상한: Railway env `SSH_TIMEOUT`(170), Dockerfile gunicorn `--timeout 190`.
-- 자주 나면: 웹 속도 튜닝값(`deploy/cpk_ssh_search.sh` 의 `CPK_SEARCH_MIN_GAP`/`CPK_WARM_SECS`) 조정, 또는 프록시 상태 점검.
+- 작업 경로는 대기열 포함60초 마감, SSH 시작/조회는 각20초 상한이다. 기존 동기 API는 기존
+  `SSH_TIMEOUT`(170), gunicorn `--timeout 190`을 유지한다.
+- 2026-09-22 격리 워커 5건은 첫 검색34.7초, 재사용4.9~7.5초였다. 실서비스 보장 시간이 아니다.
+- `performance.jsonl`에서 대기열/홈/워밍/검색/자동완성을 구분한다. 입력창 출현만으로 워밍 완료를
+  판단하면 실패한 실측이 있어 워밍을 무작정 줄이지 않는다.
 
 ### 3. 검색이 "차단"(challenge/http_error) 또는 결과 0
 - **error403(하드)**: 출구 IP 평판 저하. 프록시가 IP를 회전하므로 재시도로 대개 통과. 계속되면 프록시 잔여 GB·국가(KR) 설정 확인.

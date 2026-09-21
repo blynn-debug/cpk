@@ -542,16 +542,17 @@ class FreshContextPerSearch(unittest.TestCase):
                 state["closed"] += 1
             return FakeTab(), close_fn
 
-        orig = (cb.Tab, cb.chrome_alive, cb.open_incognito_tab, cb.FRESH_CONTEXT)
+        orig = (cb.Tab, cb.chrome_alive, cb.open_incognito_tab, cb.FRESH_CONTEXT, cb.WARM_SECS)
         cb.Tab = FakeTab
         cb.chrome_alive = lambda: True
         cb.open_incognito_tab = fake_open
         cb.FRESH_CONTEXT = True
+        cb.WARM_SECS = 0  # This test covers context ownership; warmup events have separate tests.
         try:
             with cb.search_session("test", warmup=False) as fetch:
                 r = fetch("q", 1)
         finally:
-            cb.Tab, cb.chrome_alive, cb.open_incognito_tab, cb.FRESH_CONTEXT = orig
+            cb.Tab, cb.chrome_alive, cb.open_incognito_tab, cb.FRESH_CONTEXT, cb.WARM_SECS = orig
         return r, state
 
     def test_fresh_context_opened_and_closed_once(self):
@@ -597,13 +598,13 @@ class DailyBudget(unittest.TestCase):
             n["c"] += 1
             return 200, fixture
 
-        orig = cs.search_html
+        orig = cs.search_html, cs.autocomplete
         cs.search_html = fake_search_html
         cs.autocomplete = lambda s, q, referer=None: []
         try:
             cc.run()
         finally:
-            cs.search_html = orig
+            cs.search_html, cs.autocomplete = orig
         self.assertEqual(n["c"], 1, f"상한 1인데 {n['c']}회 요청함")
 
 

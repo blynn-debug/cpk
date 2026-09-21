@@ -7,7 +7,7 @@ import sqlite3, time
 TEXT_COLS = {"top_json", "related_json", "auto_json"}
 SNAP_COLS = ["result_count", "units_shown", "rocket_cnt", "seller_rocket_cnt", "general_cnt",
              "ad_cnt", "review_sum", "review_max", "price_min", "price_med", "price_max",
-             "top_json", "related_json", "auto_json"]
+             "top_json", "related_json", "auto_json", "autocomplete_ok", "related_ok"]
 
 def _snap_col_defs() -> str:
     return ", ".join(c + (" TEXT" if c in TEXT_COLS else " INTEGER") for c in SNAP_COLS)

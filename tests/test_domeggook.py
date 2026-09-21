@@ -40,6 +40,10 @@ class ParseResponse(unittest.TestCase):
         r = dg.parse_response(body)
         self.assertEqual(r["count"], 0); self.assertEqual(r["samples"], [])
 
+    def test_error_is_not_an_empty_success(self):
+        with self.assertRaises(ValueError):
+            dg.parse_response('{"domeggook":{"error":{"message":"invalid key"}}}')
+
 class CheckExistence(unittest.TestCase):
     def test_exists_true_via_injected_opener(self):
         class FakeResp:

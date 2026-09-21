@@ -42,7 +42,7 @@
 <body>
 <div class="wrap">
   <h1>cpk 쿠팡 검색</h1>
-  <div class="sub">키워드 1개를 입력하고 검색을 누르면 쿠팡 결과를 보여줍니다. (버튼 1회 = 1건, 최대 3분)</div>
+  <div class="sub">키워드를 입력하면 준비된 검색어·상품부터 보여줍니다.</div>
 
   <div class="searchbar">
     {% if password_required %}
@@ -56,6 +56,7 @@
   <div id="results"></div>
 </div>
 
+<script src="/static/jobs.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const pwEl = $("pw");
@@ -65,23 +66,24 @@ function won(n){ return (n==null)?"-":Number(n).toLocaleString("ko-KR")+"원"; }
 function badgeClass(b){ if(!b)return""; if(b.includes("판매자"))return"seller"; if(b.includes("로켓"))return"rocket"; return""; }
 
 async function run(){
+  if ($("go").disabled) return;
   const q = $("q").value.trim();
   if(!q){ $("q").focus(); return; }
   $("go").disabled = true;
-  $("status").innerHTML = "검색 중… 최대 3분 걸릴 수 있어요.";
+  $("status").textContent = "검색을 시작합니다…";
   $("results").innerHTML = "";
-  const started = Date.now();
-  const tick = setInterval(()=>{ $("status").innerHTML = "검색 중… " + Math.round((Date.now()-started)/1000) + "초"; }, 1000);
   try {
-    const body = { q };
-    if (pwEl) body.password = pwEl.value;
-    const res = await fetch("/api/search", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
-    const data = await res.json();
-    clearInterval(tick);
-    render(data);
+    await cpkJobs.search(q, {password: pwEl?.value || "", onUpdate(job) {
+      const result = {...job.result, autocomplete: job.autocomplete?.items || []};
+      if (result.outcome === "ok") render(result);
+      else $("results").innerHTML = (job.autocomplete?.items || []).map(k => '<span class="chip ac">'+esc(k)+'</span>').join("");
+      const labels = cpkJobs.labels;
+      $("status").textContent = "검색 " + (labels[job.sections.search] || "조회 실패") +
+        " · 자동완성 " + (labels[job.sections.autocomplete] || "조회 실패") +
+        " · 도매꾹 " + (labels[job.sections.sourcing] || "조회 실패");
+    }});
   } catch(e){
-    clearInterval(tick);
-    $("status").innerHTML = '<span class="err">연결 오류가 발생했어요. 다시 시도해 주세요.</span>';
+    $("status").innerHTML = '<span class="err">'+esc(e.message)+'</span>';
   } finally {
     $("go").disabled = false;
   }

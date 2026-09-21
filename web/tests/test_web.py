@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -79,7 +80,11 @@ class HumanMessage(unittest.TestCase):
 class SearchFlow(unittest.TestCase):
     def setUp(self):
         self._env = dict(os.environ)
-        os.environ.update({"AWS103_HOST": "1.2.3.4", "SSH_KEY_FILE": "/dev/null"})
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        key_path = Path(directory.name) / "test-key"
+        key_path.write_text("test fixture, not an SSH key", encoding="utf-8")
+        os.environ.update({"AWS103_HOST": "1.2.3.4", "SSH_KEY_FILE": str(key_path)})
 
     def tearDown(self):
         os.environ.clear(); os.environ.update(self._env)

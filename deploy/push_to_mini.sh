@@ -17,8 +17,9 @@ echo "대상: $TARGET"
 FILES="cpk_browser.py cpk_collect.py cpk_import.py cpk_keepalive.py cpk_keywords.py cpk_queue.py cpk_search.py cpk_session.py cpk_search_json.py cpk_domeggook.py cpk_market.py cpk_market_db.py cpk_market_score.py cpk_market_collect.py cpk_market_seeds.py cpk_market_report.py cpk_market_parallel.py cpk_market_web_collect.py cpk.env.example requirements.txt"
 
 # 파일 전송
+FILES="$FILES cpk_metrics.py cpk_engine.py cpk_worker.py cpk_benchmark.py cpk_providers.py"
 scp -o BatchMode=yes $FILES "$TARGET:~/cpk/"
-scp -o BatchMode=yes deploy/cpk_ssh_search.sh deploy/install_mac.sh deploy/disable_scheduled.sh "$TARGET:~/cpk/deploy/"
+scp -o BatchMode=yes deploy/cpk_ssh_search.sh deploy/install_mac.sh deploy/disable_scheduled.sh deploy/run_worker.sh deploy/install_worker.sh deploy/com.cpk.worker.plist "$TARGET:~/cpk/deploy/"
 scp -o BatchMode=yes tests/*.py "$TARGET:~/cpk/tests/"
 
 # 원격 마무리: 실행권한 + 의존성 갱신(있으면)

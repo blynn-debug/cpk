@@ -3,11 +3,14 @@
 """
 from __future__ import annotations
 
+import json
+import logging
+import math
 import os
-
-from flask import Flask, jsonify, render_template, request
+import uuid
 
 import miniclient
+from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
@@ -17,8 +20,9 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
 def _password_ok(req) -> bool:
     if not APP_PASSWORD:
         return True
+    data = req.get_json(silent=True)
     sent = (req.headers.get("X-App-Password")
-            or (req.get_json(silent=True) or {}).get("password", "")
+            or (data.get("password", "") if isinstance(data, dict) else "")
             or req.form.get("password", ""))
     return sent == APP_PASSWORD
 
@@ -59,7 +63,7 @@ def diag():
 
 @app.get("/markets")
 def markets_page():
-    return render_template("markets.html")
+    return render_template("markets.html", password_required=bool(APP_PASSWORD))
 
 
 @app.get("/guide")
@@ -83,6 +87,56 @@ def api_market_collect():
         return jsonify({"markets": [], "error": "badinput",
                         "message": miniclient.human_message("badinput")}), 400
     return jsonify(miniclient.collect(q))
+
+
+@app.post("/api/jobs")
+def start_job():
+    if not _password_ok(request):
+        return jsonify({"error": "auth", "message": "비밀번호를 확인해 주세요."}), 401
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "badinput"}), 400
+    query = data.get("q", "")
+    if not isinstance(query, str) or not miniclient.valid_keyword(query):
+        return jsonify({"error": "badinput"}), 400
+    result = miniclient.start_job(query, data.get("request_id"))
+    status = 202 if result.get("request_id") else {"badinput": 400, "request_id_conflict": 409}.get(result.get("error"), 503)
+    return jsonify(result), status
+
+
+@app.get("/api/jobs/<request_id>")
+def get_job(request_id):
+    if not _password_ok(request):
+        return jsonify({"error": "auth", "message": "비밀번호를 확인해 주세요."}), 401
+    result = miniclient.get_job(request_id)
+    status = 200 if result.get("request_id") else {"badinput": 400, "not_found": 404}.get(result.get("error"), 503)
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store"
+    return response, status
+
+
+@app.post("/api/jobs/<request_id>/timing")
+def job_timing(request_id):
+    """Correlate browser-visible latency with SSH/worker timings, excluding query and secrets."""
+    if not _password_ok(request):
+        return jsonify({"error": "auth"}), 401
+    try:
+        request_id = str(uuid.UUID(request_id))
+    except ValueError:
+        return jsonify({"error": "badinput"}), 400
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "badinput"}), 400
+    record = {"request_id": request_id, "stage": "browser_display"}
+    for name in ("first_result_ms", "essential_ready_ms", "elapsed_ms"):
+        value = data.get(name)
+        if value is None:
+            continue
+        if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 180000:
+            return jsonify({"error": "badinput"}), 400
+        record[name] = round(value, 1)
+    logging.getLogger("cpk.timing").warning(json.dumps(record))
+    return "", 204
 
 
 @app.post("/api/search")

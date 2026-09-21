@@ -1,8 +1,8 @@
 """마켓 레이더 병렬 수집: 여러 키워드를 각기 다른 프록시 출구 IP로 '동시에' 검색한다.
 
-전역 검색 직렬화(cpk_session.search_gate = search.lock)는 우회한다 — 워커마다 프록시
-세션(=출구 IP)이 달라 per-IP 요청률이 자연히 1스트림/IP 이므로 병렬이 밴 위험을 키우지
-않는다. 대신 예산·중단(admit_request)과 차단 시 공통 중단(maybe_pause_on_block)은 유지한다.
+전역 검색 직렬화(cpk_session.search_gate = search.lock)는 사용하지 않는다.
+워커마다 프록시 세션을 요청하지만 서로 다른 출구 IP나 차단 위험 감소는 보장되지 않는다.
+기존 공통 중단은 admit_request가 존중한다. 이 경로의 개별 challenge는 전역 중단을 걸지 않는다.
 open_incognito_tab 이 호출마다 독립 컨텍스트·독립 websocket 을 만들어 스레드 안전하다.
 상시 Chrome(com.cpk.chrome, 9223)이 떠 있어야 한다.
 
@@ -71,7 +71,7 @@ def fetch_one(query: str, tries: int = 2, warm: bool = True) -> dict:
         if last["outcome"] in ("ok", "no_results"):
             break
     # 주의: 병렬 경로는 per-worker challenge 로 전역 중단(maybe_pause_on_block)을 걸지 않는다.
-    # 워커마다 출구 IP가 달라 한 IP의 챌린지가 다른 IP를 태우지 않기 때문(부분결과 허용 정책).
+    # 부분결과 허용 정책이다. 세션별 출구 IP 격리·차단 영향의 독립성은 검증되지 않았다.
     # 기존에 걸린 전역 중단은 admit_request 가 여전히 존중한다.
     if last["outcome"] in ("paused", "budget"):
         ac = {"ok": None, "items": [], "used": query}

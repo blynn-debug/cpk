@@ -15,6 +15,8 @@ export CPK_WARM_SECS="${CPK_WEB_WARM_SECS:-8}"
 # sentinel 로 분기: 리포트 / 온디맨드 수집(__collect__ <키워드>) / 기존 검색 1건.
 # 키워드 값은 SSH_ORIGINAL_COMMAND(env)로만 넘어가며 셸 해석을 타지 않는다(파이썬에서 파싱·검증).
 case "${SSH_ORIGINAL_COMMAND:-}" in
+  __worker__\ *)
+    exec .venv/bin/python cpk_worker.py request ;;
   __market_report__)
     exec .venv/bin/python cpk_market_report.py ;;
   __collect__*)

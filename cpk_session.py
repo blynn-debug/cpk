@@ -215,7 +215,8 @@ def units_in(html: str) -> int:
 AUTOCOMPLETE_URL = "https://www.coupang.com/n-api/web-adapter/search?keyword={q}&_={ts}"
 
 
-def autocomplete(s: requests.Session, keyword: str, referer: str | None = None) -> dict:
+def autocomplete(s: requests.Session, keyword: str, referer: str | None = None,
+                 *, timeout: float = 25, persist_cookies: bool = True) -> dict:
     """검색창 자동완성. 브라우저와 같은 XHR 헤더로 호출한다.
 
     반환: {"items": [{"keyword","travel"}], "status": int|None, "ok": bool}.
@@ -233,16 +234,21 @@ def autocomplete(s: requests.Session, keyword: str, referer: str | None = None) 
         "referer": referer or SEARCH_URL.format(q=urllib.parse.quote(keyword)),
     })
     url = AUTOCOMPLETE_URL.format(q=urllib.parse.quote(keyword), ts=int(time.time() * 1000))
-    r = s.get(url, headers=h, timeout=25)
-    persist(s)
+    r = s.get(url, headers=h, timeout=timeout)
+    if persist_cookies:
+        persist(s)
     if r.status_code != 200:
         return {"items": [], "status": r.status_code, "ok": False}
     try:
         data = r.json()
     except ValueError:
         return {"items": [], "status": r.status_code, "ok": False}
+    if not isinstance(data, list):
+        return {"items": [], "status": r.status_code, "ok": False}
     out = []
-    for it in data if isinstance(data, list) else []:
+    for it in data:
+        if not isinstance(it, dict):
+            return {"items": [], "status": r.status_code, "ok": False}
         kw = (it or {}).get("keyword")
         if kw:
             out.append({"keyword": kw, "travel": bool(it.get("travelKeyword"))})
@@ -296,7 +302,7 @@ import contextlib
 
 
 @contextlib.contextmanager
-def _flock(name: str, timeout: float = 120.0, blocking: bool = True):
+def _flock(name: str, timeout: float = 120.0, blocking: bool = True, *, wait=None):
     """이름 붙은 파일 잠금. blocking=True면 timeout까지 기다리다 TimeoutError,
     blocking=False면 즉시 획득 가능 여부(bool)를 yield 한다. Windows(fcntl 없음)에서는 항상 획득."""
     HOME.mkdir(parents=True, exist_ok=True)
@@ -317,9 +323,10 @@ def _flock(name: str, timeout: float = 120.0, blocking: bool = True):
                 if not blocking:
                     yield False
                     return
-                if time.monotonic() - t0 > timeout:
+                left = timeout - (time.monotonic() - t0)
+                if left <= 0:
                     raise TimeoutError(f"{name} 잠금 대기 {timeout}s 초과: {lock_path}")
-                time.sleep(1)
+                (wait or time.sleep)(min(0.05, left))
         try:
             yield True
         finally:
@@ -344,19 +351,22 @@ SEARCH_MIN_GAP = float(os.environ.get("CPK_SEARCH_MIN_GAP", "20"))
 
 
 @contextlib.contextmanager
-def search_gate(min_gap: float | None = None, timeout: float = 600.0):
+def search_gate(min_gap: float | None = None, timeout: float = 600.0, *, wait=None):
     """검색 한 건을 감싼다. 잠금으로 동시 검색을 막고, 직전 검색과의 간격이 min_gap 미만이면 기다린다.
     온디맨드·수집·헬스체크가 서로 다른 프로세스여도 파일 잠금·타임스탬프로 공유된다."""
     gap = SEARCH_MIN_GAP if min_gap is None else min_gap
-    with _flock("search.lock", timeout=timeout, blocking=True):
+    deadline = time.monotonic() + timeout
+    with _flock("search.lock", timeout=timeout, blocking=True, wait=wait):
         stamp = HOME / "last_search"
         try:
             last = float(stamp.read_text())
         except Exception:
             last = 0.0
-        wait = gap - (time.time() - last)
-        if wait > 0:
-            time.sleep(wait)
+        delay = gap - (time.time() - last)
+        if delay > 0:
+            if delay >= deadline - time.monotonic():
+                raise TimeoutError("search gap exceeds request deadline")
+            (wait or time.sleep)(delay)
         try:
             yield
         finally:
@@ -447,11 +457,11 @@ def today_count() -> int:
     return sum(c.get("counts", {}).values())
 
 
-def admit_request(kind: str, limit: "int | None" = None) -> int:
+def admit_request(kind: str, limit: "int | None" = None, *, timeout: float = 30) -> int:
     """control.lock 단일 구간에서 중단 확인·날짜 갱신·예산 확인·집계를 원자적으로 수행한다.
     중단이면 RequestPaused, 예산 초과면 BudgetExceeded(둘 다 집계하지 않음). 성공 시 반영 후 총합 반환.
     잠금 대기 중 다른 작업이 중단을 걸어도, 이 잠금을 잡은 뒤 최신 상태로 확인하므로 놓치지 않는다."""
-    with _flock("control.lock", timeout=30, blocking=True):
+    with _flock("control.lock", timeout=timeout, blocking=True):
         c = read_control()
         if c.get("paused_until", 0) > time.time():
             raise RequestPaused(c["paused_until"] - time.time(), c.get("reason", ""))
@@ -496,12 +506,12 @@ def atomic_write(path, text: str) -> None:
             pass
 
 
-def append_line(path, line: str) -> None:
+def append_line(path, line: str, *, timeout: float = 30) -> None:
     """append 전용 파일(runs.jsonl 등)에 한 줄을 잠금 하에 덧붙인다(동시 기록으로 줄이 섞이지 않게)."""
     from pathlib import Path as _P
     path = _P(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with _flock("append.lock", timeout=30, blocking=True):
+    with _flock("append.lock", timeout=timeout, blocking=True):
         with path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
 

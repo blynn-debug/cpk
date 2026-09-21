@@ -67,7 +67,7 @@ PROXY = proxy_config()
 # 상시 Chrome(9222)은 직결로 그대로 두고, 검색만 이 프록시 인스턴스로 돌린다.
 if PROXY:
     PORT = int(os.environ.get("CPK_PROXY_CDP_PORT", "9223"))
-    PROFILE = cs.HOME / "chrome-profile-proxy"
+    PROFILE = cs.HOME / os.environ.get("CPK_PROXY_PROFILE", "chrome-profile-proxy")
 else:
     PROFILE = cs.HOME / "chrome-profile"
 UA_FILE = cs.HOME / "ua.json"
@@ -81,14 +81,14 @@ def _http(method: str, path: str, timeout: float = 5) -> dict | list | None:
         return json.loads(body) if body.strip() else None
 
 
-def chrome_alive() -> bool:
+def chrome_alive(timeout: float = 2) -> bool:
     try:
-        return bool(_http("GET", "/json/version", 2))
+        return bool(_http("GET", "/json/version", timeout))
     except Exception:
         return False
 
 
-def launch_chrome() -> None:
+def launch_chrome(*, deadline: float | None = None) -> None:
     PROFILE.mkdir(parents=True, exist_ok=True)
     args = [CHROME, f"--user-data-dir={PROFILE}", f"--remote-debugging-port={PORT}",
             "--no-first-run", "--no-default-browser-check", "--window-size=1280,900",
@@ -99,66 +99,92 @@ def launch_chrome() -> None:
     args.append("about:blank")
     subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
-    for _ in range(40):
-        if chrome_alive():
+    end = min(time.monotonic() + 20, deadline) if deadline is not None else time.monotonic() + 20
+    while time.monotonic() < end:
+        if chrome_alive(timeout=max(0.01, min(2, end - time.monotonic()))):
             return
-        time.sleep(0.5)
-    raise RuntimeError("Chrome 디버그 포트가 열리지 않음")
+        time.sleep(max(0, min(0.5, end - time.monotonic())))
+    raise TimeoutError("Chrome 디버그 포트가 열리지 않음")
 
 
-def open_incognito_tab(proxy: dict | None = None):
+def open_incognito_tab(proxy: dict | None = None, *, deadline: float | None = None):
     """새 격리(incognito) 브라우저 컨텍스트와 그 안의 탭을 연다. 쿠키·이력이 깨끗하다.
     proxy 를 주면 그 컨텍스트만 해당 프록시로 라우팅한다(상시 Chrome 본체는 직결 유지).
     proxy 에 자격증명이 있으면 CDP Fetch 로 프록시 인증을 처리한다.
     반환: (tab, close_fn). close_fn() 이 탭과 컨텍스트를 함께 정리한다."""
     import websocket
-    ver = _http("GET", "/json/version")
-    bws = websocket.create_connection(ver["webSocketDebuggerUrl"], timeout=30, suppress_origin=True)
+    def remaining(limit=5):
+        seconds = min(limit, deadline - time.monotonic()) if deadline is not None else limit
+        if seconds <= 0:
+            raise TimeoutError("context deadline exceeded")
+        return seconds
+
+    ver = _http("GET", "/json/version", timeout=remaining())
+    bws = websocket.create_connection(ver["webSocketDebuggerUrl"], timeout=remaining(), suppress_origin=True)
     box = {"seq": 0}
 
     def bcall(method, **p):
         box["seq"] += 1
         bws.send(json.dumps({"id": box["seq"], "method": method, "params": p}))
+        end = time.monotonic() + (3 if method == "Target.disposeBrowserContext" else remaining())
         while True:
+            if time.monotonic() >= end:
+                raise TimeoutError("context command deadline exceeded")
+            bws.settimeout(end - time.monotonic())
             m = json.loads(bws.recv())
             if m.get("id") == box["seq"]:
+                if "error" in m:
+                    raise RuntimeError("context command failed")
                 return m.get("result", {})
 
-    ctx_params = {}
-    if proxy and proxy.get("server"):
-        ctx_params["proxyServer"] = proxy["server"]   # 이 컨텍스트만 프록시 경유
-    ctx_id = bcall("Target.createBrowserContext", **ctx_params)["browserContextId"]
-    tid = bcall("Target.createTarget", url="about:blank", browserContextId=ctx_id)["targetId"]
-    tab = Tab.__new__(Tab)
-    tab.id = tid
-    tab.seq = 0
-    tab.last_status = tab.last_error = tab._loader = None
-    tab._fire_id = 0
-    tab._proxy_auth = None
-    tab._block_media = False
-    tab.ws = websocket.create_connection(f"{BASE.replace('http://', 'ws://')}/devtools/page/{tid}",
-                                         timeout=30, suppress_origin=True)
-    tab.call("Page.enable")
-    tab.call("Network.enable")
-    if proxy:
-        need_auth = bool(proxy.get("user") or proxy.get("pass"))
-        if need_auth:
-            # 프록시 인증 + (선택)미디어 차단을 Fetch 인터셉트로 처리한다.
-            # sticky: 비밀번호에 컨텍스트별 세션 id를 붙여 이 검색 동안 같은 출구 IP를 유지한다
-            # (회전형이 홈↔검색 사이에 IP를 바꿔 아카마이 챌린지를 유발하는 문제 방지).
-            # 컨텍스트마다 id가 달라 검색 간에는 IP가 바뀐다(부하 분산).
-            pw = proxy.get("pass", "")
-            if pw and PROXY_STICKY:
-                pw = f"{pw}_session-{random.randrange(16 ** 10):08x}_ttl-{PROXY_TTL}"
-            tab._proxy_auth = (proxy.get("user", ""), pw)
-            tab._block_media = PROXY_BLOCK_MEDIA
-            tab.call("Fetch.enable", handleAuthRequests=True, patterns=[{"urlPattern": "*"}])
-        elif PROXY_BLOCK_MEDIA:
-            # 자격증명 없음(IP 화이트리스트): Fetch 없이 네트워크 계층에서 미디어만 차단.
-            try:
-                tab.call("Network.setBlockedURLs", urls=BLOCK_URL_PATTERNS)
-            except Exception:
-                pass
+    ctx_id = None
+    tab = None
+    try:
+        ctx_params = {"disposeOnDetach": True}
+        if proxy and proxy.get("server"):
+            ctx_params["proxyServer"] = proxy["server"]   # 이 컨텍스트만 프록시 경유
+        ctx_id = bcall("Target.createBrowserContext", **ctx_params)["browserContextId"]
+        tid = bcall("Target.createTarget", url="about:blank", browserContextId=ctx_id)["targetId"]
+        tab = Tab.__new__(Tab)
+        tab.id = tid
+        tab.seq = 0
+        tab.last_status = tab.last_error = tab._loader = None
+        tab._fire_id = 0
+        tab._proxy_auth = None
+        tab._block_media = False
+        tab.deadline = deadline
+        tab.ws = websocket.create_connection(f"{BASE.replace('http://', 'ws://')}/devtools/page/{tid}",
+                                             timeout=remaining(), suppress_origin=True)
+        tab.call("Page.enable")
+        tab.call("Network.enable")
+        if proxy:
+            need_auth = bool(proxy.get("user") or proxy.get("pass"))
+            if need_auth:
+                # 프록시 인증 + (선택)미디어 차단을 Fetch 인터셉트로 처리한다.
+                # sticky: 비밀번호에 컨텍스트별 세션 id를 붙여 이 검색 동안 같은 출구 IP를 유지한다
+                # (회전형이 홈↔검색 사이에 IP를 바꿔 아카마이 챌린지를 유발하는 문제 방지).
+                # 서로 다른 세션 id가 서로 다른 출구 IP를 보장하지는 않는다.
+                pw = proxy.get("pass", "")
+                if pw and PROXY_STICKY:
+                    pw = f"{pw}_session-{random.randrange(16 ** 10):08x}_ttl-{PROXY_TTL}"
+                tab._proxy_auth = (proxy.get("user", ""), pw)
+                tab._block_media = PROXY_BLOCK_MEDIA
+                tab.call("Fetch.enable", handleAuthRequests=True, patterns=[{"urlPattern": "*"}])
+            elif PROXY_BLOCK_MEDIA:
+                # 자격증명 없음(IP 화이트리스트): Fetch 없이 네트워크 계층에서 미디어만 차단.
+                try:
+                    tab.call("Network.setBlockedURLs", urls=BLOCK_URL_PATTERNS)
+                except Exception:
+                    pass
+
+    except Exception:
+        if tab is not None and getattr(tab, "ws", None) is not None:
+            tab.ws.close()
+        if ctx_id is not None:
+            with contextlib.suppress(Exception):
+                bcall("Target.disposeBrowserContext", browserContextId=ctx_id)
+        bws.close()
+        raise
 
     def close_fn():
         try:
@@ -184,23 +210,25 @@ def _abck_validated(tab) -> bool:
 
 
 def warm_context(tab, max_wait: float = None) -> bool:
-    """홈에 머무는 동안 사람처럼 마우스·스크롤을 넣어 _abck 센서가 검증되게 한다.
-    검증되면 True. 차가운 컨텍스트(시크릿/프록시)가 soft 챌린지를 피하도록 검색 전에 부른다.
-    홈으로 먼저 이동(goto)해 둔 상태여야 한다."""
+    """정해진 워밍 시간 동안 이벤트를 처리하고 실제 검색 입력의 준비를 확인한다.
+
+    쿠키 내부 필드를 성공의 증거로 사용하지 않는다.
+    최종 성공 여부는 검색 페이지의 실제 데이터로 판정한다.
+    """
     if max_wait is None:
         max_wait = WARM_SECS
-    t0 = time.monotonic()
-    while time.monotonic() - t0 < max_wait:
-        try:
-            tab.call("Input.dispatchMouseEvent", type="mouseMoved", x=400, y=300)
-            tab.call("Input.dispatchMouseEvent", type="mouseMoved", x=660, y=520)
-            tab.eval("window.scrollTo(0, 600)")
-        except Exception:
-            pass
-        if _abck_validated(tab):
-            return True
-        tab.pump(1.2)   # sleep 대신 이벤트를 계속 처리(Fetch 인터셉트·센서 요청 진행)
-    return _abck_validated(tab)
+    # Live pilot: an input appearing after 0.5s did not establish session readiness.
+    # Keep the configured cold-start allowance until a controlled trial supports reducing it.
+    end = time.monotonic() + max(0, max_wait)
+    while time.monotonic() < end:
+        # Preserve the established browser warmup interaction; changing it together
+        # with transport timing would confound success-rate comparisons.
+        tab.call("Input.dispatchMouseEvent", type="mouseMoved", x=400, y=300)
+        tab.call("Input.dispatchMouseEvent", type="mouseMoved", x=660, y=520)
+        tab.eval("window.scrollTo(0, 600)")
+        tab.pump(max(0, min(1.2, end - time.monotonic())))
+    return bool(tab.eval("document.readyState !== 'loading' && !!document.querySelector("
+                         "'input[name=q], #headerSearchKeyword, input[type=search]')"))
 
 
 class Tab:
@@ -225,18 +253,29 @@ class Tab:
     def pump(self, seconds: float) -> None:
         """지정 시간 동안 들어오는 CDP 이벤트를 읽어 처리한다(그냥 sleep과 달리 Fetch 인터셉트를
         계속 이어줘 프록시 인증·센서 요청이 멈추지 않게 한다)."""
-        self.ws.settimeout(max(0.2, min(seconds, 2.0)))
-        t0 = time.monotonic()
+        import websocket
+
+        end = time.monotonic() + max(0, seconds)
         try:
-            while time.monotonic() - t0 < seconds:
+            while time.monotonic() < end:
+                self.ws.settimeout(self._remaining(min(0.25, end - time.monotonic())))
                 try:
                     msg = json.loads(self.ws.recv())
-                except Exception:
+                except (TimeoutError, websocket.WebSocketTimeoutException):
                     continue
                 if msg.get("method"):
                     self._handle_event(msg)
         finally:
             self.ws.settimeout(30)
+
+    def _remaining(self, limit: float) -> float:
+        """Bound every socket wait by the operation and request deadlines."""
+        for deadline in (getattr(self, "deadline", None), getattr(self, "_operation_deadline", None)):
+            if deadline is not None:
+                limit = min(limit, deadline - time.monotonic())
+        if limit <= 0:
+            raise TimeoutError("browser deadline exceeded")
+        return limit
 
     def _fire(self, method: str, **params) -> None:
         """응답을 기다리지 않고 명령을 보낸다(음수 id → call()의 양수 seq와 절대 충돌 안 함).
@@ -252,6 +291,11 @@ class Tab:
         if m == "Network.responseReceived":
             if p.get("type") == "Document" and (self._loader is None or p.get("loaderId") == self._loader):
                 self.last_status = p.get("response", {}).get("status")
+                timing = p.get("response", {}).get("timing", {})
+                self.last_network = {key: timing[key] for key in
+                                     ("proxyStart", "proxyEnd", "dnsStart", "dnsEnd", "connectStart",
+                                      "connectEnd", "sslStart", "sslEnd", "sendEnd", "receiveHeadersEnd")
+                                     if isinstance(timing.get(key), (int, float))}
         elif m == "Network.loadingFailed":
             if p.get("type") == "Document":
                 self.last_error = p.get("errorText") or self.last_error
@@ -269,11 +313,18 @@ class Tab:
                 self._fire("Fetch.failRequest", requestId=rid, errorReason="BlockedByClient")
             else:
                 self._fire("Fetch.continueRequest", requestId=rid)
+        elif m == "Page.loadEventFired":
+            self._load_seen = True
+        elif m == "Page.domContentEventFired":
+            self._dom_seen = True
 
     def call(self, method: str, **params):
+        self.ws.settimeout(self._remaining(30))
         self.seq += 1
         self.ws.send(json.dumps({"id": self.seq, "method": method, "params": params}))
+        end = time.monotonic() + self._remaining(30)
         while True:
+            self.ws.settimeout(self._remaining(end - time.monotonic()))
             msg = json.loads(self.ws.recv())
             if msg.get("id") == self.seq:
                 if "error" in msg:
@@ -282,48 +333,77 @@ class Tab:
             if msg.get("method"):          # 명령 응답을 기다리는 중 온 이벤트도 즉시 반영
                 self._handle_event(msg)
 
-    def goto(self, url: str, settle: tuple[float, float] = (3.0, 6.0), timeout: float = 40) -> None:
+    def goto(self, url: str, settle: tuple[float, float] = (3.0, 6.0), timeout: float = 40,
+             *, ready_query: str | None = None, dom_only: bool = False) -> None:
         """페이지를 이동하며 메인 문서의 실제 HTTP 상태(last_status)와 로딩 실패(last_error)를 캡처한다.
         redirect가 있으면 최종 문서 응답의 상태가 남는다. 탐색 자체 오류·타임아웃도 last_error에 남긴다."""
         self.last_status = None
+        self.last_network = {}
         self.last_error = None
         self._loader = None
-        res = self.call("Page.navigate", url=url)
-        self._loader = res.get("loaderId")
-        if res.get("errorText"):           # Page.navigate 가 알려준 탐색 오류
-            self.last_error = res["errorText"]
-        self.ws.settimeout(timeout)
-        t0 = time.monotonic()
+        self._load_seen = self._dom_seen = False
+        self.last_ready = ready_query is None
+        previous_deadline = getattr(self, "_operation_deadline", None)
+        self._operation_deadline = time.monotonic() + self._remaining(timeout)
         try:
-            while time.monotonic() - t0 < timeout:
-                msg = json.loads(self.ws.recv())
-                if msg.get("method"):
-                    self._handle_event(msg)
-                    if msg["method"] == "Page.loadEventFired":
-                        break
+            res = self.call("Page.navigate", url=url)
+            self._loader = res.get("loaderId")
+            if res.get("errorText"):
+                self.last_error = res["errorText"]
+                return
+            self._await_load(timeout, dom_only=dom_only or ready_query is not None)
+            if ready_query is not None:
+                self.last_ready = self.wait_search_data(ready_query)
+            else:
+                self.pump(min(random.uniform(*settle), self._remaining(timeout)))
         except Exception:
             if self.last_error is None:
                 self.last_error = "transport timeout"
         finally:
+            self._operation_deadline = previous_deadline
             self.ws.settimeout(30)
-        time.sleep(random.uniform(*settle))
 
-    def _await_load(self, timeout: float = 40) -> None:
+    def _await_load(self, timeout: float = 40, *, dom_only: bool = False) -> None:
         """탐색이 시작된 뒤 loadEventFired 까지 이벤트를 수신·반영하며 기다린다(goto/검색 제출 공용)."""
-        self.ws.settimeout(timeout)
-        t0 = time.monotonic()
+        end = time.monotonic() + self._remaining(timeout)
         try:
-            while time.monotonic() - t0 < timeout:
+            while not (getattr(self, "_load_seen", False) or (dom_only and getattr(self, "_dom_seen", False))):
+                self.ws.settimeout(self._remaining(end - time.monotonic()))
                 msg = json.loads(self.ws.recv())
                 if msg.get("method"):
                     self._handle_event(msg)
-                    if msg["method"] == "Page.loadEventFired":
-                        break
         except Exception:
             if self.last_error is None:
                 self.last_error = "transport timeout"
         finally:
             self.ws.settimeout(30)
+
+    def wait_search_data(self, query: str) -> bool:
+        """Wait for matching search data to stabilize while continuing Fetch events."""
+        previous = None
+        stable_since = time.monotonic()
+        while True:
+            self._remaining(1)
+            state = self.eval("JSON.stringify({url:location.href, state:document.readyState, "
+                              "units:document.querySelectorAll('[class*=ProductUnit_productUnit]').length, "
+                              "text:(document.body?.innerText||'').slice(0,5000), "
+                              "related:document.querySelector('[class*=srp_relatedKeywords],.srp-related-keywords')?.innerText||''})")
+            data = json.loads(state or "{}")
+            text = data.get("text", "")
+            if self.last_status and self.last_status >= 400:
+                return False
+            if cs.is_challenge(text):
+                return False
+            actual = urllib.parse.parse_qs(urllib.parse.urlsplit(data.get("url", "")).query).get("q", [None])[0]
+            no_results = any(s in text for s in ("검색결과가 없습니다", "검색 결과가 없습니다", "검색된 상품이 없습니다"))
+            signature = (data.get("units"), data.get("related"), no_results)
+            if signature != previous:
+                previous, stable_since = signature, time.monotonic()
+            if (self.last_status == 200 and actual == query and data.get("state") != "loading"
+                    and (data.get("units", 0) or no_results)
+                    and time.monotonic() - stable_since >= 0.8):
+                return True
+            self.pump(0.2)
 
     SUBMIT_JS = (
         "(function(q){"
@@ -336,17 +416,24 @@ class Tab:
         "return 'enter-key';})"
     )
 
-    def submit_search(self, query: str, settle: tuple[float, float] = (3.0, 6.0)) -> str:
+    def submit_search(self, query: str, settle: tuple[float, float] = (3.0, 6.0), timeout: float = 40) -> str:
         """홈의 검색창에 입력하고 폼을 제출해 검색을 일으킨다(사용자 흐름). 결과 문서의 상태를 캡처한다.
         홈에 먼저 이동(goto)해 두어야 한다. 반환: 제출 방식 문자열."""
         self.last_status = None
         self.last_error = None
         self._loader = None   # 폼 제출은 navigate 명령이 아니라 loaderId를 미리 모른다 → 첫 Document 응답을 채택
+        self._load_seen = self._dom_seen = False
         import json as _j
-        how = self.eval(f"{self.SUBMIT_JS}({_j.dumps(query)})")
-        self._await_load()
-        time.sleep(random.uniform(*settle))
-        return how
+        previous_deadline = getattr(self, "_operation_deadline", None)
+        self._operation_deadline = time.monotonic() + self._remaining(timeout)
+        try:
+            how = self.eval(f"{self.SUBMIT_JS}({_j.dumps(query)})")
+            self._await_load(timeout)
+            self.pump(min(random.uniform(*settle), self._remaining(timeout)))
+            return how
+        finally:
+            self._operation_deadline = previous_deadline
+            self.ws.settimeout(30)
 
     def eval(self, expr: str):
         r = self.call("Runtime.evaluate", expression=expr, returnByValue=True)
@@ -481,7 +568,7 @@ def search_session(kind: str = "ondemand", warmup: bool = True):
             # 워밍업(홈 방문)도 실제 요청이므로 공통 관문을 통과한다(중단·예산·간격 적용).
             # 중단·예산이면 워밍업을 건너뛴다 — fetch 에서 다시 판정한다.
             # UI 모드는 fetch 가 매번 홈→검색창 제출을 하므로 세션 워밍업을 생략한다.
-            if warmup and SEARCH_MODE != "ui":
+            if warmup and SEARCH_MODE != "ui" and not (FRESH_CONTEXT or PROXY):
                 try:
                     with cs.request_gate("warmup"):
                         tab.goto(cs.HOME_URL)
