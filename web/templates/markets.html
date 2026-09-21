@@ -55,6 +55,17 @@
                  background:var(--warnbg); color:var(--warn); vertical-align:middle; }
   :root { --warnbg:#fef3c7; --warn:#92400e; }
   @media (prefers-color-scheme: dark) { :root { --warnbg:#2a230f; --warn:#fcd34d; } }
+  .chip.clickable { cursor:pointer; }
+  .chip.clickable:hover, .chip.clickable:focus { background:var(--accent); color:#fff; border-color:var(--accent); outline:none; }
+  .kw.clickable { cursor:pointer; }
+  .kw.clickable:hover { color:var(--accent); text-decoration:underline; }
+  #detail { margin-top:22px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .detailcard h2 { font-size:16px; margin:0 0 4px; }
+  .metrics { font-size:13px; color:var(--muted); margin:6px 0 10px; }
+  .detailcard table { width:100%; border-collapse:collapse; margin-top:4px; }
+  .detailcard th,.detailcard td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); font-size:13px; }
+  .detailcard th { color:var(--muted); font-weight:600; font-size:12px; }
 </style>
 </head>
 <body>
@@ -67,10 +78,11 @@
     <input id="q" type="text" placeholder="키워드 입력 후 수집 (예: 계란트레이)" maxlength="60" aria-label="수집할 키워드">
     <button id="collectBtn" type="submit">수집하기</button>
   </form>
-  <div class="hint">입력한 키워드를 지금 쿠팡에서 수집해 표에 추가합니다. 한 건당 최대 1~2분 걸릴 수 있어요.</div>
+  <div class="hint">키워드를 입력해 수집하거나, 표 안의 연관검색어·자동완성을 클릭하면 그 키워드로 검색해 아래에 결과가 나옵니다. 새 키워드 수집은 최대 1~2분 걸릴 수 있어요.</div>
 
   <div id="status">불러오는 중…</div>
   <div id="results"></div>
+  <div id="detail"></div>
 </div>
 
 <script>
@@ -100,7 +112,10 @@ function sparkline(points){
 }
 
 function chips(items, cls){
-  return (items||[]).map(t => '<span class="chip'+(cls?(' '+cls):'')+'">'+esc(t)+'</span>').join("");
+  // 클릭 가능: 클릭하면 그 키워드로 검색(검색창 입력 효과) → 하단 결과.
+  return (items||[]).map(t =>
+    '<span class="chip clickable'+(cls?(' '+cls):'')+'" role="button" tabindex="0" data-kw="'+esc(t)+
+    '" title="클릭하면 이 키워드로 검색">'+esc(t)+'</span>').join("");
 }
 
 // 연관검색어/자동완성: 6개 이하면 바로, 많으면 펼치기/접기(details)로 전량 출력.
@@ -125,6 +140,7 @@ function domeBadge(m){
 
 function render(data){
   const markets = data.markets || [];
+  if (!data.error) { window.__report = data; }
 
   if (data.error) {
     $("status").innerHTML = '<span class="err">'+esc(data.message || "데이터를 가져오지 못했어요.")+'</span>';
@@ -148,7 +164,8 @@ function render(data){
   markets.forEach(m => {
     const latest = m.latest || {};
     const sampleTag = m.sample ? '<span class="samplebadge">샘플</span>' : '';
-    const kwcell = '<div class="kw">'+esc(m.keyword)+sampleTag+'</div>' +
+    const kwcell = '<div class="kw clickable" role="button" tabindex="0" data-kw="'+esc(m.keyword)+
+      '" title="클릭하면 이 키워드로 검색">'+esc(m.keyword)+sampleTag+'</div>' +
       '<div class="chips">' +
         chipGroup("연관검색어", m.related, "") +
         chipGroup("자동완성", m.autocomplete, "auto") +
@@ -167,6 +184,45 @@ function render(data){
   });
   html += '</tbody></table></div>';
   $("results").innerHTML = html;
+  if (window.__lastSearch) { renderDetail(window.__lastSearch); }
+}
+
+// 하단 '검색 결과' 패널: 해당 키워드의 점수·도매꾹·상위 상품·연관/자동완성(클릭 가능)을 보여준다.
+function renderDetail(kw){
+  const d = $("detail");
+  const m = (window.__report && window.__report.markets || []).find(x => x.keyword === kw);
+  if (!m) { d.innerHTML = ""; return; }
+  const top = (m.top || []).slice(0, 10);
+  const rows = top.map(it =>
+    '<tr><td>'+esc(it.badge||'')+'</td><td>'+esc(it.name||'')+'</td>' +
+    '<td class="num">'+num(it.price)+'</td><td class="num">'+num(it.reviews)+'</td></tr>').join("");
+  const dome = m.dome_exists ? ('있음 '+num(m.dome_count)) : '없음';
+  d.innerHTML = '<div class="card detailcard">' +
+    '<h2>검색 결과 · '+esc(m.keyword)+(m.sample?' <span class="samplebadge">샘플</span>':'')+'</h2>' +
+    '<div class="metrics">기회 '+num(m.opportunity,3)+' · 경쟁 '+num(m.rarity,3)+
+      ' · 수요 '+num(m.demand,3)+' · 꾸준함 '+num(m.steadiness,3)+' · 도매꾹 '+dome+'</div>' +
+    (rows ? ('<div class="tablewrap"><table><thead><tr><th>배지</th><th>상품명</th>' +
+      '<th class="num">가격</th><th class="num">리뷰</th></tr></thead><tbody>'+rows+'</tbody></table></div>')
+      : '<div class="muted">상위 상품 정보가 없습니다.</div>') +
+    '<div class="chips">' + chipGroup("연관검색어", m.related, "") +
+      chipGroup("자동완성", m.autocomplete, "auto") + '</div>' +
+    '</div>';
+}
+
+// 클릭·입력 공통 진입: 이미 수집된 키워드면 즉시 하단 표시, 새 키워드면 수집 후 표시.
+async function doSearch(kw){
+  kw = (kw || "").trim();
+  if (!kw) return;
+  $("q").value = kw;
+  window.__lastSearch = kw;
+  const existing = (window.__report && window.__report.markets || []).find(x => x.keyword === kw);
+  if (existing) {
+    renderDetail(kw);
+    $("detail").scrollIntoView({behavior: "smooth", block: "start"});
+    return;
+  }
+  await collect(kw);  // 새 키워드는 수집(검색) 후 하단 표시
+  $("detail").scrollIntoView({behavior: "smooth", block: "start"});
 }
 
 async function load(){
@@ -184,7 +240,9 @@ async function collect(q){
   btn.disabled = true;
   const oldLabel = btn.textContent;
   btn.textContent = "수집 중…";
+  window.__lastSearch = q;
   $("status").innerHTML = '<span class="muted">"'+esc(q)+'" 수집 중… 최대 1~2분 걸릴 수 있어요.</span>';
+  $("detail").innerHTML = '<div class="card"><span class="muted">"'+esc(q)+'" 검색 중…</span></div>';
   try {
     const res = await fetch("/api/market_collect", {
       method: "POST",
@@ -192,20 +250,34 @@ async function collect(q){
       body: JSON.stringify({q: q}),
     });
     const data = await res.json();
-    render(data);              // 갱신된 전체 리포트로 다시 그림
-    if (!data.error) { $("q").value = ""; }
+    render(data);              // 갱신된 전체 리포트로 다시 그림 (render 가 renderDetail 호출)
+    if (data.error) {
+      $("detail").innerHTML = '<div class="card"><span class="err">'+esc(data.message || "검색에 실패했어요.")+'</span></div>';
+    }
   } catch (e) {
     $("status").innerHTML = '<span class="err">수집 요청이 실패했어요. 다시 시도해 주세요.</span>';
+    $("detail").innerHTML = "";
   } finally {
     btn.disabled = false;
     btn.textContent = oldLabel;
   }
 }
 
+// 키워드/칩 클릭·키보드로 검색 (이벤트 위임: 표와 하단 패널 모두 적용).
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-kw]");
+  if (el && el.dataset.kw) { doSearch(el.dataset.kw); }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const el = e.target.closest && e.target.closest("[data-kw]");
+  if (el && el.dataset.kw) { e.preventDefault(); doSearch(el.dataset.kw); }
+});
+
 $("collectForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const q = $("q").value.trim();
-  if (q) collect(q);
+  if (q) { window.__lastSearch = q; collect(q); }  // 검색창은 항상 새로 수집(검색)
 });
 
 load();

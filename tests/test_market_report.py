@@ -54,6 +54,15 @@ class Report(unittest.TestCase):
         self.assertEqual(r["markets"][0]["related"], [])
         self.assertEqual(r["markets"][0]["autocomplete"], [])
 
+    def test_top_products_from_snapshot(self):
+        t = mdb.upsert_keyword(self.conn, "탑키", "seed", status="tracked")
+        snap = {**SNAP, "top_json": '[{"name":"상품A","price":9900,"reviews":12,"badge":"로켓"}]'}
+        mdb.insert_snapshot(self.conn, t, snap, day="2026-09-21")
+        r = mr.report(self.conn)
+        row = next(m for m in r["markets"] if m["keyword"] == "탑키")
+        self.assertEqual(row["top"][0]["name"], "상품A")
+        self.assertEqual(row["top"][0]["price"], 9900)
+
     def test_sample_flag_from_source(self):
         s = mdb.upsert_keyword(self.conn, "샘플키", "sample", status="tracked")
         mdb.insert_snapshot(self.conn, s, SNAP, day="2026-09-21")

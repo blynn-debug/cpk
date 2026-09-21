@@ -13,6 +13,9 @@ from __future__ import annotations
 import concurrent.futures as cf
 import urllib.parse
 
+# 동시 워커 기본값(사용자 조정: 10→6). 회전형 주거 프록시 동시 세션·차단율을 낮춘다.
+DEFAULT_WORKERS = 6
+
 
 def _empty(query: str, outcome: str) -> dict:
     return {"query": query, "page": 1, "outcome": outcome, "http_status": None,
@@ -89,7 +92,7 @@ def _autocomplete_nogate(query: str) -> dict:
         return {"ok": False, "items": [], "used": query}
 
 
-def search_many(queries, workers: int = 10, tries: int = 2, fetch_fn=fetch_one) -> dict:
+def search_many(queries, workers: int = DEFAULT_WORKERS, tries: int = 2, fetch_fn=fetch_one) -> dict:
     """여러 키워드를 동시에 검색한다. {keyword: result} 반환. 워커 수는 keyword 수로 상한."""
     uniq = [q for q in dict.fromkeys((k or "").strip() for k in queries) if q]
     out: dict = {}
@@ -107,7 +110,7 @@ def search_many(queries, workers: int = 10, tries: int = 2, fetch_fn=fetch_one) 
 
 
 def collect_parallel(conn, queries, sourcing_fn, today: str, *,
-                     workers: int = 10, tries: int = 2, source: str = "parallel",
+                     workers: int = DEFAULT_WORKERS, tries: int = 2, source: str = "parallel",
                      search_many_fn=search_many) -> dict:
     """병렬 검색 후 성공분만 DB에 저장(스냅샷·점수·소싱). DB 쓰기는 순차(sqlite 안전).
     반환: {collected, failed, detail:{kw: outcome}}."""
