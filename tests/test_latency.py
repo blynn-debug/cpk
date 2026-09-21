@@ -81,6 +81,56 @@ class BrowserEvents(unittest.TestCase):
         tab.goto("https://example.test", settle=(0, 0))
         self.assertIsNone(tab.last_error)
 
+    def test_20260922_http_rejection_does_not_wait_for_load_or_settle(self):
+        for status in (403, 429):
+            with self.subTest(status=status):
+                tab = tab_with(
+                    [
+                        {"id": 1, "result": {"loaderId": "main"}},
+                        {
+                            "method": "Network.responseReceived",
+                            "params": {
+                                "type": "Document",
+                                "loaderId": "main",
+                                "requestId": "main-request",
+                                "response": {"status": status},
+                            },
+                        },
+                    ]
+                )
+                tab.goto("https://example.test", settle=(3, 3))
+                self.assertEqual(tab.last_status, status)
+                self.assertIsNone(tab.last_error, "HTTP denial must not become a transport timeout")
+                self.assertFalse(tab.last_ready)
+
+    def test_20260922_failed_iframe_does_not_mark_main_navigation_failed(self):
+        tab = tab_with(
+            [
+                {"id": 1, "result": {"loaderId": "main"}},
+                {
+                    "method": "Network.responseReceived",
+                    "params": {
+                        "type": "Document",
+                        "loaderId": "main",
+                        "requestId": "main-request",
+                        "response": {"status": 200},
+                    },
+                },
+                {
+                    "method": "Network.loadingFailed",
+                    "params": {
+                        "type": "Document",
+                        "requestId": "iframe",
+                        "errorText": "net::ERR_ABORTED",
+                    },
+                },
+                {"method": "Page.loadEventFired"},
+            ]
+        )
+        tab.goto("https://example.test", settle=(0, 0))
+        self.assertEqual(tab.last_status, 200)
+        self.assertIsNone(tab.last_error)
+
     def test_submit_services_late_fetch(self):
         tab = tab_with(
             [
@@ -187,6 +237,55 @@ class FakeTab:
 
 
 class SessionLifecycle(unittest.TestCase):
+    def test_20260922_home_block_uses_bounded_retry_and_preserves_http_status(self):
+        cases = (
+            (True, (403, 200), "ok", 2, False),
+            (True, (403, 403), "http_error", 2, False),
+            (True, (429,), "http_error", 1, True),
+            (False, (403,), "http_error", 1, True),
+        )
+        for proxy, statuses, outcome, attempts, paused in cases:
+            with self.subTest(proxy=proxy, statuses=statuses):
+                opened, closed, warmed, navigations = [], [], [], []
+
+                class HomeTab(FakeTab):
+                    def goto(self, url, *, events=navigations, **kwargs):
+                        events.append(url)
+                        super().goto(url, **kwargs)
+
+                def factory(*args, states=statuses, tabs=opened, disposed=closed, **kwargs):
+                    tab = HomeTab()
+                    tab.last_status = states[len(tabs)]
+                    tabs.append(tab)
+                    return tab, lambda: disposed.append(tab)
+
+                browser = engine.BrowserSearch()
+                with (
+                    patch.object(cb, "PROXY", {"server": "test"} if proxy else None),
+                    patch.object(cb, "chrome_alive", return_value=True),
+                    patch.object(cb, "open_incognito_tab", factory),
+                    patch.object(
+                        cb, "warm_context", side_effect=lambda tab, seen=warmed, **kw: seen.append(tab) or True
+                    ),
+                    patch.object(cs, "admit_request", return_value=1),
+                    patch.object(cs, "paused_remaining", return_value=0),
+                    patch.object(cs, "today_count", return_value=0),
+                    patch.object(cs, "search_gate", side_effect=lambda **kw: contextlib.nullcontext()),
+                    patch.object(cs, "maybe_pause_on_block") as pause,
+                ):
+                    result = browser.search("q", Trace(), tries=2)
+                self.assertEqual(result["outcome"], outcome)
+                self.assertEqual(result["attempts"], attempts)
+                self.assertEqual(len(opened), attempts)
+                self.assertEqual(len(warmed), int(outcome == "ok"), "blocked homes must skip warmup")
+                self.assertEqual(len(navigations), attempts + int(outcome == "ok"))
+                self.assertEqual(pause.called, paused)
+                if outcome != "ok":
+                    self.assertEqual(result["http_status"], statuses[-1])
+                    self.assertEqual(result["failed_stage"], "home")
+                    self.assertEqual(len(closed), attempts)
+                browser.close()
+
     def test_reuses_successful_context_and_expires(self):
         opened = []
         closed = []

@@ -290,6 +290,7 @@ class Tab:
         p = msg.get("params", {})
         if m == "Network.responseReceived":
             if p.get("type") == "Document" and (self._loader is None or p.get("loaderId") == self._loader):
+                self._document_request_id = p.get("requestId")
                 self.last_status = p.get("response", {}).get("status")
                 timing = p.get("response", {}).get("timing", {})
                 self.last_network = {key: timing[key] for key in
@@ -297,7 +298,7 @@ class Tab:
                                       "connectEnd", "sslStart", "sslEnd", "sendEnd", "receiveHeadersEnd")
                                      if isinstance(timing.get(key), (int, float))}
         elif m == "Network.loadingFailed":
-            if p.get("type") == "Document":
+            if p.get("requestId") and p.get("requestId") == getattr(self, "_document_request_id", None):
                 self.last_error = p.get("errorText") or self.last_error
         elif m == "Fetch.authRequired":
             # 프록시 인증 요구 → 자격증명 제공(없으면 기본 동작).
@@ -341,6 +342,7 @@ class Tab:
         self.last_network = {}
         self.last_error = None
         self._loader = None
+        self._document_request_id = None
         self._load_seen = self._dom_seen = False
         self.last_ready = ready_query is None
         previous_deadline = getattr(self, "_operation_deadline", None)
@@ -352,6 +354,9 @@ class Tab:
                 self.last_error = res["errorText"]
                 return
             self._await_load(timeout, dom_only=dom_only or ready_query is not None)
+            if self.last_status is not None and self.last_status >= 400:
+                self.last_ready = False
+                return
             if ready_query is not None:
                 self.last_ready = self.wait_search_data(ready_query)
             else:
@@ -368,6 +373,9 @@ class Tab:
         end = time.monotonic() + self._remaining(timeout)
         try:
             while not (getattr(self, "_load_seen", False) or (dom_only and getattr(self, "_dom_seen", False))):
+                # A rejected main document cannot become a successful page by waiting for assets.
+                if self.last_status is not None and self.last_status >= 400:
+                    return
                 self.ws.settimeout(self._remaining(end - time.monotonic()))
                 msg = json.loads(self.ws.recv())
                 if msg.get("method"):
@@ -422,6 +430,7 @@ class Tab:
         self.last_status = None
         self.last_error = None
         self._loader = None   # 폼 제출은 navigate 명령이 아니라 loaderId를 미리 모른다 → 첫 Document 응답을 채택
+        self._document_request_id = None
         self._load_seen = self._dom_seen = False
         import json as _j
         previous_deadline = getattr(self, "_operation_deadline", None)

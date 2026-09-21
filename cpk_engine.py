@@ -16,6 +16,12 @@ from cpk_metrics import Trace
 __all__ = ["BrowserSearch", "autocomplete", "parse_search"]
 
 
+class _HomeHTTPError(Exception):
+    def __init__(self, status: int):
+        self.status = status
+        super().__init__("home HTTP error")
+
+
 def parse_search(query: str, html: str, status: int | None, *, final_url: str = "") -> dict:
     """Preserve the existing data contract and reject mismatched or incomplete pages."""
     rows = sr.parse(html)
@@ -133,6 +139,7 @@ class BrowserSearch:
         """Search with a shared deadline and a fresh context only when needed."""
         result = parse_search(query, "", None)
         for attempt in range(1, max(1, tries) + 1):
+            result = parse_search(query, "", None)
             try:
                 trace.remaining()
                 if self.tab is not None and time.monotonic() - self.created >= self.ttl:
@@ -160,6 +167,8 @@ class BrowserSearch:
                             navigation_error=bool(getattr(self.tab, "last_error", None)),
                             network_ms=getattr(self.tab, "last_network", {}),
                         )
+                    if self.tab.last_status is not None and self.tab.last_status >= 400:
+                        raise _HomeHTTPError(self.tab.last_status)
                     with trace.stage("warmup", attempt=attempt):
                         if not cb.warm_context(self.tab, max_wait=trace.remaining(cb.WARM_SECS)):
                             raise RuntimeError("home search input unavailable")
@@ -168,10 +177,12 @@ class BrowserSearch:
                 with self.navigation("worker_search", trace):
                     with trace.stage("search", attempt=attempt):
                         self.tab.goto(url, settle=(0, 0), timeout=trace.remaining(25), ready_query=query)
-                        snapshot = self.tab.eval(
-                            "JSON.stringify({html:document.documentElement.outerHTML,url:location.href})"
-                        )
-                        data = json.loads(snapshot or "{}")
+                        data = {}
+                        if self.tab.last_status is None or self.tab.last_status < 400:
+                            snapshot = self.tab.eval(
+                                "JSON.stringify({html:document.documentElement.outerHTML,url:location.href})"
+                            )
+                            data = json.loads(snapshot or "{}")
                 with trace.stage("parse", attempt=attempt):
                     result = parse_search(
                         query, data.get("html", ""), self.tab.last_status, final_url=data.get("url", "")
@@ -192,13 +203,9 @@ class BrowserSearch:
                     if not self.reuse:
                         self.close()
                     return result
-                self.close()
-                # Protect the home IP: direct-route challenge/403 stops without rotation or retry.
-                if result.get("http_status") == 429 or (
-                    not cb.PROXY and (result["outcome"] == "challenge" or result.get("http_status") == 403)
-                ):
-                    cs.maybe_pause_on_block(result["outcome"], result.get("http_status"), reason="worker blocked")
-                    break
+            except _HomeHTTPError as exc:
+                result = parse_search(query, "", exc.status)
+                result.update(attempts=attempt, session_reused=False, failed_stage="home")
             except (cs.RequestPaused, cs.BudgetExceeded) as exc:
                 result["outcome"] = "paused" if isinstance(exc, cs.RequestPaused) else "budget"
                 self.close()
@@ -209,4 +216,11 @@ class BrowserSearch:
                 result["attempts"] = attempt
                 if isinstance(exc, TimeoutError):
                     break
+            self.close()
+            # Apply the same stop policy to rejected home and search documents.
+            if result.get("http_status") == 429 or (
+                not cb.PROXY and (result["outcome"] == "challenge" or result.get("http_status") == 403)
+            ):
+                cs.maybe_pause_on_block(result["outcome"], result.get("http_status"), reason="worker blocked")
+                break
         return result
