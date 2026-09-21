@@ -67,13 +67,26 @@ def fetch_one(query: str, tries: int = 2, warm: bool = True) -> dict:
             close()
         if last["outcome"] in ("ok", "no_results"):
             break
-    if last["outcome"] not in ("ok", "no_results"):
-        cs.maybe_pause_on_block(last["outcome"], last["http_status"], reason="market_par")
+    # 주의: 병렬 경로는 per-worker challenge 로 전역 중단(maybe_pause_on_block)을 걸지 않는다.
+    # 워커마다 출구 IP가 달라 한 IP의 챌린지가 다른 IP를 태우지 않기 때문(부분결과 허용 정책).
+    # 기존에 걸린 전역 중단은 admit_request 가 여전히 존중한다.
     if last["outcome"] in ("paused", "budget"):
         ac = {"ok": None, "items": [], "used": query}
     else:
-        ac = cs.autocomplete_keywords(query)
+        ac = _autocomplete_nogate(query)  # 게이트 우회: 병렬에서 직렬화되지 않게
     return _shape(query, last, ac)
+
+
+def _autocomplete_nogate(query: str) -> dict:
+    """자동완성을 request_gate(직렬화) 없이 조회한다. 병렬 배치 전용.
+    (자동완성은 관대한 API이고, 예산·중단은 검색 admit_request 에서 이미 반영된다.)"""
+    import cpk_session as cs
+    try:
+        res = cs.autocomplete(cs.make_session(), query)
+        return {"ok": res.get("ok"), "items": [a["keyword"] for a in res.get("items", [])],
+                "used": query}
+    except Exception:
+        return {"ok": False, "items": [], "used": query}
 
 
 def search_many(queries, workers: int = 10, tries: int = 2, fetch_fn=fetch_one) -> dict:
