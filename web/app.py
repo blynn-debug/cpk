@@ -8,11 +8,15 @@ import logging
 import math
 import os
 import uuid
+from datetime import datetime
 
 import miniclient
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
+
+from exports import MAX_BODY, workbook_bytes
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = MAX_BODY
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "").strip()
 
@@ -150,6 +154,31 @@ def api_search():
                         "message": miniclient.human_message("badinput"), "items": []}), 400
     result = miniclient.search(q)
     return jsonify(result)
+
+
+@app.post("/api/export")
+def export_results():
+    """Export only the supplied screen data; never start a search or read the worker."""
+    if request.content_length is not None and request.content_length > MAX_BODY:
+        return jsonify({"error": "too_large", "message": "저장할 데이터가 너무 큽니다. 나누어 선택해 주세요."}), 413
+    # Flask limits stream reads too; cache the body for the shared password check.
+    raw = request.get_data()
+    if not _password_ok(request):
+        return jsonify({"error": "auth", "message": "비밀번호를 확인해 주세요."}), 401
+    try:
+        payload = json.loads(raw)
+    except (ValueError, UnicodeError):
+        return jsonify({"error": "badinput", "message": "저장 데이터 형식이 올바르지 않습니다."}), 400
+    try:
+        output = workbook_bytes(payload)
+    except ValueError as exc:
+        return jsonify({"error": "badinput", "message": str(exc)}), 400
+    response = send_file(
+        output, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True, download_name=f"cpk-results-{datetime.now():%Y%m%d-%H%M%S}.xlsx",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 if __name__ == "__main__":

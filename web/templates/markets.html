@@ -67,6 +67,7 @@
   .detailcard th,.detailcard td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); font-size:13px; }
   .detailcard th { color:var(--muted); font-weight:600; font-size:12px; }
 </style>
+<link rel="stylesheet" href="/static/workspace.css">
 </head>
 <body>
 <div class="wrap">
@@ -74,21 +75,48 @@
   <div class="sub">market.db 에 쌓인 기회점수·경쟁·수요·꾸준함·도매꾹 현황을 읽기 전용으로 보여줍니다.</div>
   <div class="topnav"><a href="/guide">📖 지표 설명 (판단 가이드)</a></div>
 
+  <div class="workspace-tools" id="workspaceTools">
   <form class="searchbar" id="collectForm" autocomplete="off">
     {% if password_required %}<input id="pw" type="password" placeholder="접근 비밀번호" autocomplete="off" aria-label="접근 비밀번호">{% endif %}
     <input id="q" type="text" placeholder="키워드 입력 후 수집 (예: 계란트레이)" maxlength="60" aria-label="수집할 키워드">
     <button id="collectBtn" type="submit">수집하기</button>
   </form>
-  <div class="hint">검색하면 준비된 연관검색어·자동완성·상품부터 표시합니다. 도매꾹 정보는 조회가 끝나면 추가됩니다.</div>
-
-  <div id="status">불러오는 중…</div>
-  <div id="results"></div>
-  <div id="detail"></div>
+  {% include '_export.html' %}
+  <div class="workspace-nav"><button type="button" id="showMarketList">키워드 목록</button><div id="recentQueries" aria-label="최근 본 키워드"></div></div>
+  <div id="status" role="status" aria-live="polite">불러오는 중…</div>
+  </div>
+  <div id="detail" tabindex="-1" aria-label="선택한 키워드 검색 결과"></div>
+  <details id="marketList" open><summary>키워드 목록 <span id="marketCount"></span></summary><div id="results"></div></details>
 </div>
 
 <script src="/static/jobs.js"></script>
+<script src="/static/exports.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
+const recentQueries = [];
+const cachedJobs = new Map();
+cpkExport.init();
+new ResizeObserver(() => document.documentElement.style.setProperty("--tools-height", ($("workspaceTools").offsetHeight + 12) + "px")).observe($("workspaceTools"));
+
+function showQuery(kw) {
+  const previous = recentQueries.indexOf(kw);
+  if (previous >= 0) recentQueries.splice(previous, 1);
+  recentQueries.unshift(kw);
+  recentQueries.splice(8);
+  $("recentQueries").innerHTML = recentQueries.map(query => '<button type="button" data-kw="'+esc(query)+'" aria-current="'+(query === kw)+'">'+esc(query)+'</button>').join("");
+  $("marketList").open = false;
+}
+
+function focusResult() {
+  $("detail").focus({preventScroll:true});
+  $("detail").scrollIntoView({behavior:"instant", block:"start"});
+}
+
+$("showMarketList").addEventListener("click", () => {
+  $("marketList").open = true;
+  $("marketList").scrollIntoView({behavior:"instant", block:"start"});
+  $("marketList").querySelector("summary").focus({preventScroll:true});
+});
 
 function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function num(n, digits){
@@ -114,7 +142,7 @@ function sparkline(points){
 }
 
 function chips(items, cls){
-  // 클릭 가능: 클릭하면 그 키워드로 검색(검색창 입력 효과) → 하단 결과.
+  // Clicking a keyword shows its result directly below the sticky controls.
   return (items||[]).map(t =>
     '<span class="chip clickable'+(cls?(' '+cls):'')+'" role="button" tabindex="0" data-kw="'+esc(t)+
     '" title="클릭하면 이 키워드로 검색">'+esc(t)+'</span>').join("");
@@ -142,7 +170,8 @@ function domeBadge(m){
 
 function render(data){
   const markets = data.markets || [];
-  if (!data.error) { window.__report = data; }
+  if (!data.error) { window.__report = data; cpkExport.report(markets); }
+  $("marketCount").textContent = '('+markets.length+')';
 
   if (data.error) {
     $("status").innerHTML = '<span class="err">'+esc(data.message || "데이터를 가져오지 못했어요.")+'</span>';
@@ -166,7 +195,8 @@ function render(data){
   markets.forEach(m => {
     const latest = m.latest || {};
     const sampleTag = m.sample ? '<span class="samplebadge">샘플</span>' : '';
-    const kwcell = '<div class="kw clickable" role="button" tabindex="0" data-kw="'+esc(m.keyword)+
+    const kwcell = '<label class="export-check"><input type="checkbox" data-export-query="'+esc(m.keyword)+'" aria-label="'+esc(m.keyword)+' 엑셀 선택"> 엑셀 선택</label>' +
+      '<div class="kw clickable" role="button" tabindex="0" data-kw="'+esc(m.keyword)+
       '" title="클릭하면 이 키워드로 검색">'+esc(m.keyword)+sampleTag+'</div>' +
       '<div class="chips">' +
         chipGroup("연관검색어", m.related, "") +
@@ -186,49 +216,56 @@ function render(data){
   });
   html += '</tbody></table></div>';
   $("results").innerHTML = html;
+  cpkExport.update();
   if (window.__lastSearch) { renderDetail(window.__lastSearch); }
 }
 
-// 하단 '검색 결과' 패널: 해당 키워드의 점수·도매꾹·상위 상품·연관/자동완성(클릭 가능)을 보여준다.
+// The active result stays above the keyword list, including cached live results.
 function renderDetail(kw){
+  if (cachedJobs.has(kw)) { renderJob(cachedJobs.get(kw)); return; }
   const d = $("detail");
   const m = (window.__report && window.__report.markets || []).find(x => x.keyword === kw);
   if (!m) { d.innerHTML = ""; return; }
+  d.dataset.query = kw;
   const top = (m.top || []).slice(0, 10);
   const rows = top.map(it =>
     '<tr><td>'+esc(it.badge||'')+'</td><td>'+esc(it.name||'')+'</td>' +
     '<td class="num">'+num(it.price)+'</td><td class="num">'+num(it.reviews)+'</td></tr>').join("");
   const dome = m.dome_exists == null ? '미확인' : m.dome_exists ? ('있음 '+num(m.dome_count)) : '없음';
   d.innerHTML = '<div class="card detailcard">' +
-    '<h2>검색 결과 · '+esc(m.keyword)+(m.sample?' <span class="samplebadge">샘플</span>':'')+'</h2>' +
+    '<h2>검색 결과 · '+esc(m.keyword)+(m.sample?' <span class="samplebadge">샘플</span>':'')+
+      '<label class="export-check"><input type="checkbox" data-export-query="'+esc(m.keyword)+'"> 엑셀 선택</label></h2>' +
     '<div class="metrics">기회 '+num(m.opportunity,3)+' · 경쟁 '+num(m.rarity,3)+
       ' · 수요 '+num(m.demand,3)+' · 꾸준함 '+num(m.steadiness,3)+' · 도매꾹 '+dome+'</div>' +
-    (rows ? ('<div class="tablewrap"><table><thead><tr><th>배지</th><th>상품명</th>' +
-      '<th class="num">가격</th><th class="num">리뷰</th></tr></thead><tbody>'+rows+'</tbody></table></div>')
-      : '<div class="muted">상위 상품 정보가 없습니다.</div>') +
     '<div class="chips">' + chipGroup("연관검색어", m.related, "") +
       (m.autocomplete_ok === 0 ? '<div class="grouplabel">자동완성 · 조회 실패</div>' : chipGroup("자동완성", m.autocomplete, "auto")) + '</div>' +
+    (rows ? ('<div class="product-scroll"><table><thead><tr><th>배지</th><th>상품명</th>' +
+      '<th class="num">가격</th><th class="num">리뷰</th></tr></thead><tbody>'+rows+'</tbody></table></div>')
+      : '<div class="muted">상위 상품 정보가 없습니다.</div>') +
     '</div>';
+  cpkExport.update();
+  $("status").textContent = '"'+kw+'" 저장된 결과';
 }
 
-// 클릭·입력 공통 진입: 이미 수집된 키워드면 즉시 하단 표시, 새 키워드면 수집 후 표시.
+// Cached keyword navigation does not issue another collection request.
 async function doSearch(kw){
   kw = (kw || "").trim();
   if (!kw) return;
   $("q").value = kw;
   window.__lastSearch = kw;
+  showQuery(kw);
   const existing = (window.__report && window.__report.markets || []).find(x => x.keyword === kw);
-  if (existing) {
+  const cached = cachedJobs.get(kw);
+  if ((existing && !cached) || (cached && ["complete", "partial", "failed"].includes(cached.state))) {
     if (window.__searchController) window.__searchController.abort();
     window.__searchVersion = (window.__searchVersion || 0) + 1;
     $("collectBtn").disabled = false;
     $("collectBtn").textContent = "수집하기";
     renderDetail(kw);
-    $("detail").scrollIntoView({behavior: "smooth", block: "start"});
+    focusResult();
     return;
   }
-  await collect(kw);  // 새 키워드는 수집(검색) 후 하단 표시
-  $("detail").scrollIntoView({behavior: "smooth", block: "start"});
+  await collect(kw);
 }
 
 async function load(){
@@ -252,13 +289,17 @@ async function collect(q){
   btn.disabled = true;
   btn.textContent = "수집 중…";
   window.__lastSearch = q;
+  showQuery(q);
   $("status").textContent = '"'+q+'" 검색을 시작합니다…';
   $("detail").innerHTML = '<div class="card"><span class="muted">"'+esc(q)+'" 검색 중…</span></div>';
+  focusResult();
   try {
     await cpkJobs.search(q, {password: $("pw")?.value || "", signal: controller.signal,
       onUpdate(job) {
         if (window.__searchVersion !== version) return;
+        cachedJobs.set(q, job);
         if (job.report) render(job.report);
+        cpkExport.job(job);
         renderJob(job);
       }});
   } catch (e) {
@@ -273,6 +314,10 @@ async function collect(q){
 }
 
 function renderJob(job) {
+  const detail = $("detail");
+  const sameQuery = detail.dataset.query === job.query;
+  const scroll = sameQuery ? detail.querySelector(".product-scroll")?.scrollTop || 0 : 0;
+  const expanded = sameQuery ? [...detail.querySelectorAll("details[open] summary")].map(el => el.textContent) : [];
   const sections = job.sections || {};
   const labels = cpkJobs.labels;
   const state = name => labels[sections[name]] || "조회 실패";
@@ -282,15 +327,20 @@ function renderJob(job) {
   const result = job.result || {};
   const group = (label, name, values, cls) => sections[name] === "ok" ? chipGroup(label, values, cls) :
     '<div class="grouplabel">'+esc(label)+' <span class="muted">'+esc(state(name))+'</span></div>';
-  const items = (result.items || []).slice(0, 10);
+  const items = result.items || [];
   const rows = items.map(it => '<tr><td>'+esc(it.badge)+'</td><td>'+esc(it.name)+'</td><td>'+num(it.price)+'</td><td>'+num(it.reviews)+'</td></tr>').join("");
   const source = sections.sourcing === "ok" ? (job.sourcing.exists ? "있음 " + num(job.sourcing.count) : "없음") : state("sourcing");
-  $("detail").innerHTML = '<div class="card detailcard"><h2>검색 결과 · '+esc(job.query)+'</h2>' +
+  $("detail").innerHTML = '<div class="card detailcard"><h2>검색 결과 · '+esc(job.query)+
+    '<label class="export-check"><input type="checkbox" data-export-query="'+esc(job.query)+'"> 엑셀 선택</label></h2>' +
     '<div class="chips">'+group("연관검색어", "search", result.related_keywords, "")+
     group("자동완성", "autocomplete", job.autocomplete?.items, "auto")+'</div>' +
-    '<div class="metrics">도매꾹 '+esc(source)+'</div>'+
-    (rows ? '<table><thead><tr><th>배지</th><th>상품명</th><th>가격</th><th>리뷰</th></tr></thead><tbody>'+rows+'</tbody></table>' :
+    '<div class="metrics">상품 '+items.length+'개 · 도매꾹 '+esc(source)+'</div>'+
+    (rows ? '<div class="product-scroll"><table><thead><tr><th>배지</th><th>상품명</th><th>가격</th><th>리뷰</th></tr></thead><tbody>'+rows+'</tbody></table></div>' :
       '<div class="muted">상품 '+esc(state("search"))+'</div>')+'</div>';
+  cpkExport.update();
+  detail.dataset.query = job.query;
+  if (detail.querySelector(".product-scroll")) detail.querySelector(".product-scroll").scrollTop = scroll;
+  detail.querySelectorAll("details").forEach(el => {el.open = expanded.includes(el.querySelector("summary").textContent);});
 }
 
 // 키워드/칩 클릭·키보드로 검색 (이벤트 위임: 표와 하단 패널 모두 적용).

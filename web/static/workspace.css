@@ -1,0 +1,43 @@
+.workspace-tools { position:sticky; top:0; z-index:10; background:var(--bg); padding:10px 0 8px; border-bottom:1px solid var(--line); }
+.workspace-tools .searchbar { margin:0; }
+.workspace-tools #status { margin:8px 0 0; line-height:1.4; }
+.exportbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.exportbar button,.export-picker summary,.workspace-nav button { font:inherit; font-size:12px; padding:7px 10px; border:1px solid var(--line); border-radius:7px; background:var(--card); color:var(--text,#111); cursor:pointer; }
+.exportbar button:disabled { opacity:.5; cursor:default; }
+.export-picker { position:relative; }
+.export-picker summary { list-style:none; }
+.export-picker summary::after { content:" ▾"; }
+.export-menu { position:absolute; top:100%; left:0; width:280px; max-width:80vw; padding:12px; margin-top:4px; background:var(--card); border:1px solid var(--line); border-radius:10px; box-shadow:0 8px 24px #0002; z-index:20; }
+.export-actions { display:flex; gap:8px; margin-bottom:8px; }
+#exportChoices { max-height:220px; overflow:auto; }
+#exportChoices label { display:flex; align-items:center; gap:6px; font-size:13px; padding:7px 0; overflow-wrap:anywhere; }
+input[data-export-query] { width:16px; height:16px; flex:none; accent-color:var(--accent); cursor:pointer; }
+.export-hint,#exportStatus { color:var(--muted); font-size:12px; }
+#exportStatus:empty { display:none; }
+#exportStatus { margin-top:6px; }
+.workspace-nav { display:flex; align-items:center; gap:8px; margin-top:8px; }
+#recentQueries { display:flex; gap:6px; overflow:auto; flex:1; padding:2px; }
+#recentQueries button { white-space:nowrap; }
+#recentQueries button[aria-current=true] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+.workspace-nav > button { white-space:nowrap; }
+#detail { scroll-margin-top:var(--tools-height,190px); margin:16px 0; outline:none; }
+#detail:empty { display:none; }
+#marketList { margin-top:18px; scroll-margin-top:var(--tools-height,190px); }
+#marketList > summary { cursor:pointer; font-size:15px; font-weight:600; padding:12px 0; }
+.product-scroll { overflow:auto; max-height:48vh; margin-top:10px; }
+.product-scroll table { overflow:visible; }
+.product-scroll th { position:sticky; top:0; z-index:1; background:var(--card); }
+.export-check { white-space:nowrap; font-size:12px; font-weight:400; margin-left:12px; color:var(--muted); }
+.kwcell .export-check { margin:0 0 6px; display:block; }
+button:focus-visible,summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+@media(max-width:600px) {
+  .wrap { padding:12px 12px 32px; }
+  .export-hint { display:none; }
+  .workspace-tools .searchbar input { min-width:120px; }
+  .workspace-tools .searchbar button { padding:10px 12px; }
+  .exportbar { gap:6px; }
+  .exportbar button,.export-picker summary { padding:7px 8px; }
+  .product-scroll { max-height:46vh; }
+  .export-check { display:block; margin:8px 0 0; }
+}
+@media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }

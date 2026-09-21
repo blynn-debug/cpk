@@ -38,12 +38,14 @@
   .err { color:#b91c1c; }
   .section { margin-top:8px; }
 </style>
+<link rel="stylesheet" href="/static/workspace.css">
 </head>
 <body>
 <div class="wrap">
   <h1>cpk 쿠팡 검색</h1>
   <div class="sub">키워드를 입력하면 준비된 검색어·상품부터 보여줍니다.</div>
 
+  <div class="workspace-tools">
   <div class="searchbar">
     {% if password_required %}
     <input id="pw" type="password" placeholder="접근 비밀번호" autocomplete="off" style="max-width:160px">
@@ -52,14 +54,18 @@
     <button id="go">검색</button>
   </div>
 
-  <div id="status"></div>
+  {% include '_export.html' %}
+  <div id="status" role="status" aria-live="polite"></div>
+  </div>
   <div id="results"></div>
 </div>
 
 <script src="/static/jobs.js"></script>
+<script src="/static/exports.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const pwEl = $("pw");
+cpkExport.init();
 
 function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function won(n){ return (n==null)?"-":Number(n).toLocaleString("ko-KR")+"원"; }
@@ -74,6 +80,7 @@ async function run(){
   $("results").innerHTML = "";
   try {
     await cpkJobs.search(q, {password: pwEl?.value || "", onUpdate(job) {
+      cpkExport.job(job);
       const result = {...job.result, autocomplete: job.autocomplete?.items || []};
       if (result.outcome === "ok") render(result);
       else $("results").innerHTML = (job.autocomplete?.items || []).map(k => '<span class="chip ac">'+esc(k)+'</span>').join("");

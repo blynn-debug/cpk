@@ -1,0 +1,13 @@
+<div class="exportbar" aria-label="엑셀 저장">
+  <details class="export-picker">
+    <summary>저장할 키워드 선택</summary>
+    <div class="export-menu">
+      <div class="export-actions"><button type="button" id="selectAllExports">모두 선택</button><button type="button" id="clearExports">선택 해제</button></div>
+      <div id="exportChoices"></div>
+    </div>
+  </details>
+  <button type="button" id="exportAll" disabled>전체 저장 (0)</button>
+  <button type="button" id="exportSelected" disabled>선택 저장 (0)</button>
+  <span class="export-hint">엑셀 · 현재 받은 데이터 기준</span>
+</div>
+<div id="exportStatus" class="hint" role="status" aria-live="polite"></div>
