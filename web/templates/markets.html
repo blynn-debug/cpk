@@ -81,7 +81,7 @@
     <input id="q" type="text" placeholder="키워드 입력 후 수집 (예: 계란트레이)" maxlength="60" aria-label="수집할 키워드">
     <button id="collectBtn" type="submit">수집하기</button>
   </form>
-  {% include '_export.html' %}
+  {% with show_keyword_picker = false %}{% include '_export.html' %}{% endwith %}
   <div class="workspace-nav"><button type="button" id="showMarketList">키워드 목록</button><div id="recentQueries" aria-label="최근 본 키워드"></div></div>
   <div id="status" role="status" aria-live="polite">불러오는 중…</div>
   </div>
@@ -195,9 +195,9 @@ function render(data){
   markets.forEach(m => {
     const latest = m.latest || {};
     const sampleTag = m.sample ? '<span class="samplebadge">샘플</span>' : '';
-    const kwcell = '<label class="export-check"><input type="checkbox" data-export-query="'+esc(m.keyword)+'" aria-label="'+esc(m.keyword)+' 엑셀 선택"> 엑셀 선택</label>' +
+    const kwcell = '<div class="kwheading"><label class="export-check"><input type="checkbox" data-export-query="'+esc(m.keyword)+'" aria-label="'+esc(m.keyword)+' 선택"></label>' +
       '<div class="kw clickable" role="button" tabindex="0" data-kw="'+esc(m.keyword)+
-      '" title="클릭하면 이 키워드로 검색">'+esc(m.keyword)+sampleTag+'</div>' +
+      '" title="클릭하면 이 키워드로 검색">'+esc(m.keyword)+sampleTag+'</div></div>' +
       '<div class="chips">' +
         chipGroup("연관검색어", m.related, "") +
         (m.autocomplete_ok === 0 ? '<div class="grouplabel">자동완성 · 조회 실패</div>' : chipGroup("자동완성", m.autocomplete, "auto")) +
@@ -234,7 +234,7 @@ function renderDetail(kw){
   const dome = m.dome_exists == null ? '미확인' : m.dome_exists ? ('있음 '+num(m.dome_count)) : '없음';
   d.innerHTML = '<div class="card detailcard">' +
     '<h2>검색 결과 · '+esc(m.keyword)+(m.sample?' <span class="samplebadge">샘플</span>':'')+
-      '<label class="export-check"><input type="checkbox" data-export-query="'+esc(m.keyword)+'"> 엑셀 선택</label></h2>' +
+      '<label class="export-check"><input type="checkbox" data-export-query="'+esc(m.keyword)+'" aria-label="'+esc(m.keyword)+' 선택"></label></h2>' +
     '<div class="metrics">기회 '+num(m.opportunity,3)+' · 경쟁 '+num(m.rarity,3)+
       ' · 수요 '+num(m.demand,3)+' · 꾸준함 '+num(m.steadiness,3)+' · 도매꾹 '+dome+'</div>' +
     '<div class="chips">' + chipGroup("연관검색어", m.related, "") +
@@ -331,7 +331,7 @@ function renderJob(job) {
   const rows = items.map(it => '<tr><td>'+esc(it.badge)+'</td><td>'+esc(it.name)+'</td><td>'+num(it.price)+'</td><td>'+num(it.reviews)+'</td></tr>').join("");
   const source = sections.sourcing === "ok" ? (job.sourcing.exists ? "있음 " + num(job.sourcing.count) : "없음") : state("sourcing");
   $("detail").innerHTML = '<div class="card detailcard"><h2>검색 결과 · '+esc(job.query)+
-    '<label class="export-check"><input type="checkbox" data-export-query="'+esc(job.query)+'"> 엑셀 선택</label></h2>' +
+    '<label class="export-check"><input type="checkbox" data-export-query="'+esc(job.query)+'" aria-label="'+esc(job.query)+' 선택"></label></h2>' +
     '<div class="chips">'+group("연관검색어", "search", result.related_keywords, "")+
     group("자동완성", "autocomplete", job.autocomplete?.items, "auto")+'</div>' +
     '<div class="metrics">상품 '+items.length+'개 · 도매꾹 '+esc(source)+'</div>'+

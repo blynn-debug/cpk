@@ -1,4 +1,5 @@
 <div class="exportbar" aria-label="엑셀 저장">
+  {% if show_keyword_picker | default(true) %}
   <details class="export-picker">
     <summary>저장할 키워드 선택</summary>
     <div class="export-menu">
@@ -6,6 +7,7 @@
       <div id="exportChoices"></div>
     </div>
   </details>
+  {% endif %}
   <button type="button" id="exportAll" disabled>전체 저장 (0)</button>
   <button type="button" id="exportSelected" disabled>선택 저장 (0)</button>
   <span class="export-hint">엑셀 · 현재 받은 데이터 기준</span>

@@ -12,7 +12,7 @@ window.cpkExport = (() => {
     choice.textContent = `선택 저장 (${selected.size})`;
     const list = document.getElementById("exportChoices");
     const keys = JSON.stringify([...records.keys()]);
-    if (list.dataset.keys !== keys) {
+    if (list && list.dataset.keys !== keys) {
       list.dataset.keys = keys;
       list.innerHTML = [...records.keys()].map(query => `<label><input type="checkbox" data-export-query="${text(query)}"> ${text(query)}</label>`).join("") || '<span class="muted">아직 저장할 결과가 없습니다.</span>';
     }
@@ -73,8 +73,8 @@ window.cpkExport = (() => {
   function init() {
     document.getElementById("exportAll").addEventListener("click", () => save("all"));
     document.getElementById("exportSelected").addEventListener("click", () => save("selected"));
-    document.getElementById("selectAllExports").addEventListener("click", () => {records.forEach((_, key) => selected.add(key)); update();});
-    document.getElementById("clearExports").addEventListener("click", () => {selected.clear(); update();});
+    document.getElementById("selectAllExports")?.addEventListener("click", () => {records.forEach((_, key) => selected.add(key)); update();});
+    document.getElementById("clearExports")?.addEventListener("click", () => {selected.clear(); update();});
     document.addEventListener("change", event => {
       if (!event.target.matches("[data-export-query]")) return;
       const query = event.target.dataset.exportQuery;
