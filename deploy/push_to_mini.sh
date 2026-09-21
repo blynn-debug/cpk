@@ -14,7 +14,7 @@ fi
 echo "대상: $TARGET"
 
 # 보낼 파일(크롤러 코드 + 배포 스크립트 + 테스트 + 예시 env). 비밀·상태 제외.
-FILES="cpk_browser.py cpk_collect.py cpk_import.py cpk_keepalive.py cpk_keywords.py cpk_queue.py cpk_search.py cpk_session.py cpk_search_json.py cpk_domeggook.py cpk_market.py cpk_market_db.py cpk_market_score.py cpk_market_collect.py cpk_market_seeds.py cpk_market_report.py cpk.env.example requirements.txt"
+FILES="cpk_browser.py cpk_collect.py cpk_import.py cpk_keepalive.py cpk_keywords.py cpk_queue.py cpk_search.py cpk_session.py cpk_search_json.py cpk_domeggook.py cpk_market.py cpk_market_db.py cpk_market_score.py cpk_market_collect.py cpk_market_seeds.py cpk_market_report.py cpk_market_parallel.py cpk_market_web_collect.py cpk.env.example requirements.txt"
 
 # 파일 전송
 scp -o BatchMode=yes $FILES "$TARGET:~/cpk/"

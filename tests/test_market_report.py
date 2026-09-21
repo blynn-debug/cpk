@@ -54,6 +54,17 @@ class Report(unittest.TestCase):
         self.assertEqual(r["markets"][0]["related"], [])
         self.assertEqual(r["markets"][0]["autocomplete"], [])
 
+    def test_sample_flag_from_source(self):
+        s = mdb.upsert_keyword(self.conn, "샘플키", "sample", status="tracked")
+        mdb.insert_snapshot(self.conn, s, SNAP, day="2026-09-21")
+        r = mr.report(self.conn)
+        row = next(m for m in r["markets"] if m["keyword"] == "샘플키")
+        self.assertTrue(row["sample"])
+        self.assertEqual(row["source"], "sample")
+        # 일반 소스는 sample=False
+        other = next(m for m in r["markets"] if m["keyword"] == "계란보관함")
+        self.assertFalse(other["sample"])
+
     def test_null_rocket_counts_no_crash(self):
         # rocket_cnt/seller_rocket_cnt 가 NULL 이어도 units>0 이면 리포트가 죽지 않는다.
         d = mdb.upsert_keyword(self.conn, "널로켓", "seed", status="tracked")

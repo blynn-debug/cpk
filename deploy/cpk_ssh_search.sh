@@ -12,8 +12,12 @@ set +a
 # (큐/헬스체크 등 다른 경로는 cpk.env 의 보수적 값을 그대로 쓴다 — 여기 export 는 이 프로세스에만 유효)
 export CPK_SEARCH_MIN_GAP="${CPK_WEB_SEARCH_MIN_GAP:-5}"
 export CPK_WARM_SECS="${CPK_WEB_WARM_SECS:-8}"
-# 리포트 sentinel 이면 시장 리포트로, 아니면 기존 검색 1건으로 분기한다.
-if [ "${SSH_ORIGINAL_COMMAND:-}" = "__market_report__" ]; then
-  exec .venv/bin/python cpk_market_report.py
-fi
+# sentinel 로 분기: 리포트 / 온디맨드 수집(__collect__ <키워드>) / 기존 검색 1건.
+# 키워드 값은 SSH_ORIGINAL_COMMAND(env)로만 넘어가며 셸 해석을 타지 않는다(파이썬에서 파싱·검증).
+case "${SSH_ORIGINAL_COMMAND:-}" in
+  __market_report__)
+    exec .venv/bin/python cpk_market_report.py ;;
+  __collect__*)
+    exec .venv/bin/python cpk_market_web_collect.py ;;
+esac
 exec .venv/bin/python cpk_search_json.py

@@ -72,6 +72,19 @@ def api_markets():
     return jsonify(miniclient.market_report())
 
 
+@app.post("/api/market_collect")
+def api_market_collect():
+    """검색창(온디맨드): 키워드 1건을 수집한 뒤 갱신된 마켓 리포트를 돌려준다."""
+    data = request.get_json(silent=True) or {}
+    q = (data.get("q") or "").strip()
+    if not _password_ok(request):
+        return jsonify({"markets": [], "error": "auth", "message": "비밀번호가 필요하거나 틀렸어요."}), 401
+    if not miniclient.valid_keyword(q):
+        return jsonify({"markets": [], "error": "badinput",
+                        "message": miniclient.human_message("badinput")}), 400
+    return jsonify(miniclient.collect(q))
+
+
 @app.post("/api/search")
 def api_search():
     data = request.get_json(silent=True) or {}

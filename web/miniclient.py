@@ -131,6 +131,33 @@ def market_report() -> dict:
     return res
 
 
+COLLECT_PREFIX = "__collect__ "
+
+
+def collect(keyword: str) -> dict:
+    """검색창(온디맨드): 키워드 1건을 맥미니에서 '수집'(검색→저장→점수→소싱)한 뒤
+    갱신된 마켓 리포트를 돌려준다. 실패는 {'markets':[], 'error':..} 로."""
+    keyword = (keyword or "").strip()
+    if not valid_keyword(keyword):
+        return {"markets": [], "error": "badinput", "message": human_message("badinput")}
+    try:
+        key_path = _key_path()
+    except Exception as e:
+        return {"markets": [], "error": str(e), "message": human_message("error")}
+    cmd = build_ssh_command(COLLECT_PREFIX + keyword, key_path)
+    timeout = float(os.environ.get("SSH_COLLECT_TIMEOUT", os.environ.get("SSH_TIMEOUT", "175")))
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"markets": [], "error": "timeout", "message": human_message("timeout")}
+    if p.returncode != 0 and not p.stdout.strip():
+        return {"markets": [], "error": (p.stderr or "").strip()[-300:],
+                "message": human_message("transport")}
+    res = parse_output(p.stdout)
+    res.setdefault("markets", [])
+    return res
+
+
 def search(keyword: str) -> dict:
     """키워드 1건을 맥미니에서 검색해 결과 dict 를 돌려준다. 실패도 outcome 으로 표현."""
     keyword = (keyword or "").strip()

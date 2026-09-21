@@ -44,6 +44,17 @@
           color:var(--text); border:1px solid var(--line); white-space:nowrap; }
   .chip.auto { background:rgba(37,99,235,.08); }
   .grouplabel { font-size:11px; color:var(--muted); margin-top:6px; }
+  .searchbar { display:flex; gap:8px; margin:14px 0 6px; flex-wrap:wrap; }
+  .searchbar input { flex:1; min-width:180px; padding:10px 12px; font-size:14px; border:1px solid var(--line);
+                     border-radius:8px; background:var(--card); color:var(--text); }
+  .searchbar button { padding:10px 16px; font-size:14px; font-weight:600; border:none; border-radius:8px;
+                      background:var(--accent); color:#fff; cursor:pointer; white-space:nowrap; }
+  .searchbar button:disabled { opacity:.55; cursor:progress; }
+  .hint { font-size:12px; color:var(--muted); margin-bottom:4px; }
+  .samplebadge { font-size:10px; font-weight:600; padding:1px 6px; border-radius:6px; margin-left:6px;
+                 background:var(--warnbg); color:var(--warn); vertical-align:middle; }
+  :root { --warnbg:#fef3c7; --warn:#92400e; }
+  @media (prefers-color-scheme: dark) { :root { --warnbg:#2a230f; --warn:#fcd34d; } }
 </style>
 </head>
 <body>
@@ -51,6 +62,12 @@
   <h1 id="markets">cpk market radar — markets</h1>
   <div class="sub">market.db 에 쌓인 기회점수·경쟁·수요·꾸준함·도매꾹 현황을 읽기 전용으로 보여줍니다.</div>
   <div class="topnav"><a href="/guide">📖 지표 설명 (판단 가이드)</a></div>
+
+  <form class="searchbar" id="collectForm" autocomplete="off">
+    <input id="q" type="text" placeholder="키워드 입력 후 수집 (예: 계란트레이)" maxlength="60" aria-label="수집할 키워드">
+    <button id="collectBtn" type="submit">수집하기</button>
+  </form>
+  <div class="hint">입력한 키워드를 지금 쿠팡에서 수집해 표에 추가합니다. 한 건당 최대 1~2분 걸릴 수 있어요.</div>
 
   <div id="status">불러오는 중…</div>
   <div id="results"></div>
@@ -130,7 +147,8 @@ function render(data){
 
   markets.forEach(m => {
     const latest = m.latest || {};
-    const kwcell = '<div class="kw">'+esc(m.keyword)+'</div>' +
+    const sampleTag = m.sample ? '<span class="samplebadge">샘플</span>' : '';
+    const kwcell = '<div class="kw">'+esc(m.keyword)+sampleTag+'</div>' +
       '<div class="chips">' +
         chipGroup("연관검색어", m.related, "") +
         chipGroup("자동완성", m.autocomplete, "auto") +
@@ -160,6 +178,35 @@ async function load(){
     $("status").innerHTML = '<span class="err">연결 오류가 발생했어요. 다시 시도해 주세요.</span>';
   }
 }
+
+async function collect(q){
+  const btn = $("collectBtn");
+  btn.disabled = true;
+  const oldLabel = btn.textContent;
+  btn.textContent = "수집 중…";
+  $("status").innerHTML = '<span class="muted">"'+esc(q)+'" 수집 중… 최대 1~2분 걸릴 수 있어요.</span>';
+  try {
+    const res = await fetch("/api/market_collect", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({q: q}),
+    });
+    const data = await res.json();
+    render(data);              // 갱신된 전체 리포트로 다시 그림
+    if (!data.error) { $("q").value = ""; }
+  } catch (e) {
+    $("status").innerHTML = '<span class="err">수집 요청이 실패했어요. 다시 시도해 주세요.</span>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldLabel;
+  }
+}
+
+$("collectForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const q = $("q").value.trim();
+  if (q) collect(q);
+});
 
 load();
 </script>

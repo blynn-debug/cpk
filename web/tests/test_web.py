@@ -185,6 +185,21 @@ class MarketReport(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn("지표 설명".encode("utf-8"), r.data)
 
+    def test_market_collect_calls_miniclient(self):
+        from unittest import mock
+        fake = {"generated": "t", "markets": [{"keyword": "계란트레이", "opportunity": 0.5,
+                 "related": [], "autocomplete": [], "trend": [], "latest": {}}]}
+        with mock.patch.object(self.app.miniclient, "collect", return_value=fake) as m:
+            r = self.client.post("/api/market_collect", json={"q": "계란트레이"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["markets"][0]["keyword"], "계란트레이")
+        m.assert_called_once_with("계란트레이")
+
+    def test_market_collect_rejects_bad_keyword(self):
+        r = self.client.post("/api/market_collect", json={"q": "  "})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["error"], "badinput")
+
 
 if __name__ == "__main__":
     unittest.main()

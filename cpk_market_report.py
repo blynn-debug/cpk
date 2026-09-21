@@ -27,6 +27,8 @@ def report(conn) -> dict:
         latest = snaps[-1] if snaps else {}
         markets.append({
             "keyword": row["keyword"],
+            "source": row.get("source"),
+            "sample": row.get("source") == "sample",  # 샘플 데이터 표시용
             "opportunity": row.get("opportunity"),
             "rarity": row.get("rarity"), "demand": row.get("demand"),
             "steadiness": row.get("steadiness"),

@@ -32,7 +32,8 @@ jobs:
           python -m unittest
           tests.test_unit tests.test_regression
           tests.test_domeggook tests.test_market_db tests.test_market_snapshot
-          tests.test_market_score tests.test_market_expand tests.test_market_collect -v
+          tests.test_market_score tests.test_market_expand tests.test_market_collect
+          tests.test_market_report tests.test_market_parallel tests.test_market_seeds -v
 
       - name: Web offline tests
         working-directory: web
