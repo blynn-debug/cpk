@@ -159,7 +159,7 @@ class BrowserSearch:
                     self.tab.deadline = trace.deadline
                     with self.navigation("worker_home", trace):
                         with trace.stage("home", attempt=attempt):
-                            self.tab.goto(cs.HOME_URL, settle=(0, 0), timeout=trace.remaining(40))
+                            self.tab.goto(cs.HOME_URL, settle=(0, 0), timeout=trace.remaining(40), dom_only=True)
                         trace.observe(
                             "home",
                             attempt=attempt,

@@ -131,6 +131,19 @@ class BrowserEvents(unittest.TestCase):
         self.assertEqual(tab.last_status, 200)
         self.assertIsNone(tab.last_error)
 
+    def test_20260922_home_dom_ready_does_not_wait_for_unrelated_assets(self):
+        tab = tab_with(
+            [
+                {"id": 1, "result": {}},
+                {"method": "Page.domContentEventFired"},
+                {"method": "Fetch.requestPaused", "params": {"requestId": "sensor", "resourceType": "XHR"}},
+            ]
+        )
+        tab.goto("https://example.test", settle=(0, 0), dom_only=True)
+        self.assertIsNone(tab.last_error)
+        tab.pump(0.005)
+        self.assertTrue(any(message.get("method") == "Fetch.continueRequest" for message in tab.ws.sent))
+
     def test_submit_services_late_fetch(self):
         tab = tab_with(
             [
